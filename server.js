@@ -156,6 +156,51 @@ io.on('connection', (socket) => {
             socket.emit('search-results', []);
         }
     });
+        // --- BROWSE MOVIES (Categories & Filters) ---
+    socket.on('browse-movies', async ({ category, genreId }) => {
+        try {
+            let url;
+            // If genre is selected, use discover endpoint
+            if (genreId) {
+                url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&sort_by=popularity.desc`;
+            } else {
+                // Otherwise use the category's native endpoint
+                let endpoint;
+                if (category === 'trending') endpoint = '/trending/movie/day';
+                else if (category === 'popular') endpoint = '/movie/popular';
+                else if (category === 'top_rated') endpoint = '/movie/top_rated';
+                else if (category === 'now_playing') endpoint = '/movie/now_playing';
+                else endpoint = '/movie/popular';
+                url = `${TMDB_BASE_URL}${endpoint}?api_key=${TMDB_API_KEY}`;
+            }
+
+            const data = await httpsGet(url);
+            const results = data.results.slice(0, 20).map(m => ({
+                id: m.id,
+                title: m.title,
+                year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
+                poster: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null,
+                overview: m.overview || 'No description available.'
+            }));
+            socket.emit('browse-results', results);
+        } catch (error) {
+            console.log('❌ Browse error:', error.message);
+            socket.emit('browse-results', []);
+        }
+    });
+
+    // --- GET GENRES LIST ---
+    socket.on('get-genres', async () => {
+        try {
+            const url = `${TMDB_BASE_URL}/genre/movie/list?api_key=${TMDB_API_KEY}`;
+            const data = await httpsGet(url);
+            socket.emit('genres-list', data.genres);
+        } catch (error) {
+            console.log('❌ Genres error:', error.message);
+            socket.emit('genres-list', []);
+        }
+    });
+    
 
     // --- SHARED PLAYLIST ---
     socket.on('add-to-playlist', ({ roomCode, movie }) => {

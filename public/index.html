@@ -8,44 +8,58 @@
 </head>
 <body>
 
-        <div id="lobby-view" class="container">
-        <h1>Watch Party</h1>
-        <div id="invite-banner" class="hidden" style="background-color: #2196F3; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 0.9em;">
-            ✨ You've been invited to join room <strong id="invite-room-code"></strong>!
+    <!-- SCREEN 1: Username + Choice -->
+    <div id="screen-lobby" class="screen">
+        <div class="lobby-card">
+            <div class="brand">
+                <span class="brand-icon">🎬</span>
+                <span class="brand-name">Watch Party</span>
+            </div>
+
+            <div id="invite-banner" class="invite-banner hidden">
+                ✨ You've been invited to join <strong id="invite-room-code"></strong>
+            </div>
+
+            <h1 class="lobby-title" id="lobby-title">What's your name?</h1>
+            <input type="text" id="username-input" class="input-field" placeholder="Enter your name" required autocomplete="off">
+            
+            <div id="lobby-actions" class="lobby-actions">
+                <button id="create-btn" class="btn btn-primary">Create Room</button>
+                <button id="show-enter-code-btn" class="btn btn-secondary">Enter Code</button>
+            </div>
+
+            <div id="enter-code-section" class="hidden">
+                <input type="text" id="room-code-input" class="input-field code-input" placeholder="ENTER CODE" maxlength="6" autocomplete="off">
+                <div class="lobby-actions">
+                    <button id="back-btn" class="btn btn-secondary">Back</button>
+                    <button id="join-btn" class="btn btn-primary">Join Room</button>
+                </div>
+            </div>
+
+            <p id="error-msg" class="error-msg"></p>
         </div>
-        
-        <input type="text" id="username-input" placeholder="Enter your name" required>
-        
-        <!-- Create Room section (hidden when using invite link) -->
-        <div id="create-room-section">
-            <button id="create-btn">Create Room</button>
-            <hr style="border-color: #444; margin: 20px 0;">
-        </div>
-        
-        <!-- Join Room section (hidden when creating a room normally... actually always visible) -->
-        <div id="join-room-section">
-            <input type="text" id="room-code-input" placeholder="Enter Room Code">
-            <button id="join-btn">Join Room</button>
-        </div>
-        
-        <p id="error-msg" style="color: #ff5555; margin-top: 10px;"></p>
     </div>
 
-    <div id="room-view" class="container hidden">
-       <h1>Room: <span id="display-room-code"></span></h1>
-        <button id="copy-invite-btn" style="background-color: #2196F3; margin-top: 5px;">🔗 Copy Invite Link</button>
-        <div class="main-layout">
-            <div class="video-section">
-                <div class="video-controls">
-                    <input type="text" id="video-url-input" placeholder="Paste a direct video URL (.mp4)">
-                    <button id="load-video-btn">Load Video</button>
-                    <button id="force-sync-btn" style="background-color: #2196F3;">Force Sync</button>
-                </div>
+    <!-- SCREEN 2: Room -->
+    <div id="room-view" class="room-layout hidden">
+        <header class="room-header">
+            <div class="header-left">
+                <span class="brand-icon small">🎬</span>
+                <span class="room-code-label">Room</span>
+                <span id="display-room-code" class="room-code"></span>
+                <button id="copy-invite-btn" class="icon-btn" title="Copy Invite Link">🔗</button>
+            </div>
+            <div class="header-right">
+                <span class="users-label">👥</span>
+                <ul id="user-list" class="header-user-list"></ul>
+            </div>
+        </header>
 
-                <div class="custom-controls">
-                    <button id="play-pause-btn">Play / Pause</button>
-                </div>
-
+        <div class="room-body">
+            <div class="video-area">
+                <video id="video-player" controls>Your browser does not support HTML5 video.</video>
+                
+                <!-- Emoji bar below video -->
                 <div class="emoji-bar" id="emoji-bar">
                     <button class="emoji-btn" data-emoji="❤️">❤️</button>
                     <button class="emoji-btn" data-emoji="😂">😂</button>
@@ -55,64 +69,79 @@
                     <button class="emoji-btn" data-emoji="😢">😢</button>
                 </div>
 
-                <div class="reaction-overlay" id="reaction-overlay"></div>
-
-                <video id="video-player" controls>Your browser does not support HTML5 video.</video>
-
-                <div>
-                    <h3>Users in Room:</h3>
-                    <ul id="user-list" class="user-list"></ul>
+                <div class="video-input-row">
+                    <input type="text" id="video-url-input" class="input-field" placeholder="Paste a direct video URL (.mp4)">
+                    <button id="load-video-btn" class="btn btn-primary small">Load</button>
                 </div>
+
+                <button id="leave-btn" class="btn btn-danger small full-width">Leave Room</button>
             </div>
 
-            <div class="side-panel">
-                <div class="panel-box search-section">
-                    <h3 style="margin-top: 0;">🔍 Find a Movie</h3>
-                    <div class="search-input-area">
-                        <input type="text" id="search-input" placeholder="Search movies...">
-                    </div>
-                    <div class="search-results" id="search-results">
-                        <p style="color: #888; font-size: 0.85em;">Start typing to search...</p>
-                    </div>
+            <aside class="side-panel">
+                <div class="panel-tabs">
+                    <button class="panel-tab active" data-tab="chat">💬 Chat</button>
+                    <button class="panel-tab" data-tab="search">🔍 Movies</button>
+                    <button class="panel-tab" data-tab="playlist">🎬 Playlist</button>
                 </div>
 
-                <div class="panel-box playlist-section">
-                    <h3 style="margin-top: 0;">🎬 Shared Playlist</h3>
-                    <div class="playlist-items" id="playlist-items">
-                        <p style="color: #888; font-size: 0.85em;">No movies in playlist yet. Add some!</p>
-                    </div>
-                </div>
-
-                <div class="panel-box chat-section">
-                    <h3 style="margin-top: 0;">💬 Live Chat</h3>
+                <!-- Chat Tab -->
+                <div class="panel-content active" id="tab-chat">
                     <div class="chat-messages" id="chat-messages"></div>
                     <div class="chat-input-area">
-                        <input type="text" id="chat-input" placeholder="Type a message...">
-                        <button id="send-chat-btn">Send</button>
+                        <input type="text" id="chat-input" class="input-field" placeholder="Type a message...">
+                        <button id="send-chat-btn" class="btn btn-primary small">➤</button>
                     </div>
                 </div>
-            </div>
+
+                <!-- Search Tab -->
+                <div class="panel-content" id="tab-search">
+                    <div class="search-input-area">
+                        <input type="text" id="search-input" class="input-field" placeholder="Search movies...">
+                    </div>
+                    <div class="category-tabs" id="category-tabs">
+                        <button class="cat-tab active" data-category="trending">🔥 Trending</button>
+                        <button class="cat-tab" data-category="popular">⭐ Popular</button>
+                        <button class="cat-tab" data-category="top_rated">🏆 Top</button>
+                        <button class="cat-tab" data-category="now_playing">🎭 Now</button>
+                    </div>
+                    <div class="genre-filter">
+                        <select id="genre-select">
+                            <option value="">All Genres</option>
+                        </select>
+                    </div>
+                    <div class="search-results" id="search-results">
+                        <p class="muted-text">Loading...</p>
+                    </div>
+                </div>
+
+                <!-- Playlist Tab -->
+                <div class="panel-content" id="tab-playlist">
+                    <div class="playlist-items" id="playlist-items">
+                        <p class="muted-text">No movies yet. Add from the Movies tab!</p>
+                    </div>
+                </div>
+            </aside>
         </div>
 
-        <button id="leave-btn" style="background-color: #ff5555; margin-top: 20px; width: 100%;">Leave Room</button>
+        <div class="reaction-overlay" id="reaction-overlay"></div>
     </div>
 
+    <!-- Trailer Modal -->
     <div id="trailer-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">
                 <h3 id="trailer-title">Trailer</h3>
-                <button id="close-modal-btn" style="background-color: #ff5555;">✕ Close</button>
+                <button id="close-modal-btn" class="icon-btn">✕</button>
             </div>
-            <div id="trailer-frame"></div>
+        <div id="trailer-frame"></div>
+        <div id="trailer-loading" class="trailer-loading">Loading trailer…</div>
         </div>
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="client.js"></script>
     <script>
-        // This must be defined BEFORE the YouTube API loads
         window.onYouTubeIframeAPIReady = function() {
-            console.log('✅ YouTube API ready');
             window.ytApiReady = true;
             if (window.pendingTrailerKey) {
                 window.buildYtPlayer(window.pendingTrailerKey);
