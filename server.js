@@ -207,6 +207,17 @@ io.on('connection', (socket) => {
             socket.emit('error-message', 'Could not load trailer.');
         }
     });
+        // --- 😀 EMOJI REACTIONS ---
+    socket.on('emoji-reaction', ({ roomCode, emoji }) => {
+        if (rooms[roomCode]) {
+            io.to(roomCode).emit('emoji-reaction', {
+                emoji: emoji,
+                username: socket.username,
+                id: Date.now() + '_' + Math.random().toString(36).substring(2, 6)
+            });
+        }
+    });
+
     // --- TRAILER PLAY/PAUSE SYNC ---
     socket.on('trailer-state-change', ({ roomCode, isPlaying, currentTime }) => {
         if (rooms[roomCode] && rooms[roomCode].trailerState.isOpen) {
