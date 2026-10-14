@@ -1,5 +1,6 @@
 
 const socket = io();
+      
 
         const lobbyView = document.getElementById('lobby-view');
         const roomView = document.getElementById('room-view');
@@ -26,7 +27,31 @@ const socket = io();
         const closeModalBtn = document.getElementById('close-modal-btn');
         const emojiBar = document.getElementById('emoji-bar');
         const reactionOverlay = document.getElementById('reaction-overlay');
+        const copyInviteBtn = document.getElementById('copy-invite-btn');
+        const inviteBanner = document.getElementById('invite-banner');
+        const inviteRoomCode = document.getElementById('invite-room-code');
+        // --- INVITE LINK DETECTION ---
+        // --- INVITE LINK DETECTION ---
+let invitedRoomCode = null; // Store it globally so the join button can use it
 
+(function checkInviteLink() {
+    const params = new URLSearchParams(window.location.search);
+    const inviteCode = params.get('room');
+    if (inviteCode) {
+        invitedRoomCode = inviteCode.toUpperCase();
+        
+        // Show the invite banner with the code
+        inviteRoomCode.textContent = invitedRoomCode;
+        inviteBanner.classList.remove('hidden');
+        
+        // Hide the "Create Room" section and the "Enter Room Code" input
+        document.getElementById('create-room-section').classList.add('hidden');
+        document.getElementById('room-code-input').classList.add('hidden');
+        
+        // Focus on the username field
+        document.getElementById('username-input').focus();
+    }
+})();
         let currentRoomCode = '';
         let isHost = false;
         let syncLock = false;
@@ -43,12 +68,12 @@ const socket = io();
         });
 
         joinBtn.addEventListener('click', () => {
-            const username = usernameInput.value.trim();
-            const roomCode = roomCodeInput.value.trim().toUpperCase();
-            if (!username) return alert('Please enter a name!');
-            if (!roomCode) return alert('Please enter a room code!');
-            socket.emit('join-room', { username, roomCode });
-        });
+    const username = usernameInput.value.trim();
+    const roomCode = invitedRoomCode || roomCodeInput.value.trim().toUpperCase();
+    if (!username) return alert('Please enter a name!');
+    if (!roomCode) return alert('Please enter a room code!');
+    socket.emit('join-room', { username, roomCode });
+});
 
         socket.on('room-created', (roomCode) => { currentRoomCode = roomCode; showRoomView(roomCode); });
         socket.on('room-joined', (roomCode) => { currentRoomCode = roomCode; showRoomView(roomCode); });
@@ -74,6 +99,23 @@ const socket = io();
             displayRoomCode.textContent = roomCode;
             errorMsg.textContent = '';
         }
+        // --- COPY INVITE LINK ---
+copyInviteBtn.addEventListener('click', () => {
+    const inviteUrl = `${window.location.origin}?room=${currentRoomCode}`;
+    
+    navigator.clipboard.writeText(inviteUrl).then(() => {
+        // Success feedback
+        copyInviteBtn.textContent = '✅ Copied!';
+        copyInviteBtn.style.backgroundColor = '#4CAF50';
+        setTimeout(() => {
+            copyInviteBtn.textContent = '🔗 Copy Invite Link';
+            copyInviteBtn.style.backgroundColor = '#2196F3';
+        }, 2000);
+    }).catch(err => {
+        // Fallback for older browsers
+        prompt('Copy this link:', inviteUrl);
+    });
+});
 
         // --- MOVIE SEARCH ---
         let searchTimeout;

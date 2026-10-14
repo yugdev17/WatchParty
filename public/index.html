@@ -8,18 +8,32 @@
 </head>
 <body>
 
-    <div id="lobby-view" class="container">
+        <div id="lobby-view" class="container">
         <h1>Watch Party</h1>
+        <div id="invite-banner" class="hidden" style="background-color: #2196F3; padding: 10px; border-radius: 5px; margin-bottom: 15px; font-size: 0.9em;">
+            ✨ You've been invited to join room <strong id="invite-room-code"></strong>!
+        </div>
+        
         <input type="text" id="username-input" placeholder="Enter your name" required>
-        <button id="create-btn">Create Room</button>
-        <hr style="border-color: #444; margin: 20px 0;">
-        <input type="text" id="room-code-input" placeholder="Enter Room Code">
-        <button id="join-btn">Join Room</button>
+        
+        <!-- Create Room section (hidden when using invite link) -->
+        <div id="create-room-section">
+            <button id="create-btn">Create Room</button>
+            <hr style="border-color: #444; margin: 20px 0;">
+        </div>
+        
+        <!-- Join Room section (hidden when creating a room normally... actually always visible) -->
+        <div id="join-room-section">
+            <input type="text" id="room-code-input" placeholder="Enter Room Code">
+            <button id="join-btn">Join Room</button>
+        </div>
+        
         <p id="error-msg" style="color: #ff5555; margin-top: 10px;"></p>
     </div>
 
     <div id="room-view" class="container hidden">
-        <h1>Room: <span id="display-room-code"></span></h1>
+       <h1>Room: <span id="display-room-code"></span></h1>
+        <button id="copy-invite-btn" style="background-color: #2196F3; margin-top: 5px;">🔗 Copy Invite Link</button>
         <div class="main-layout">
             <div class="video-section">
                 <div class="video-controls">
