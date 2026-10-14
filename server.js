@@ -37,7 +37,7 @@ const TMDB_API_KEY = 'd411e3bbc2de81f662b87cc90518f87f';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 console.log('🔑 API Key loaded, length:', TMDB_API_KEY.length);
-
+let cachedGenres = null;
 const rooms = {};
 
 io.on('connection', (socket) => {
@@ -156,15 +156,13 @@ io.on('connection', (socket) => {
             socket.emit('search-results', []);
         }
     });
-        // --- BROWSE MOVIES (Categories & Filters) ---
+    // --- BROWSE MOVIES (Categories & Filters) ---
     socket.on('browse-movies', async ({ category, genreId }) => {
         try {
             let url;
-            // If genre is selected, use discover endpoint
             if (genreId) {
                 url = `${TMDB_BASE_URL}/discover/movie?api_key=${TMDB_API_KEY}&with_genres=${genreId}&sort_by=popularity.desc`;
             } else {
-                // Otherwise use the category's native endpoint
                 let endpoint;
                 if (category === 'trending') endpoint = '/trending/movie/day';
                 else if (category === 'popular') endpoint = '/movie/popular';
@@ -182,19 +180,23 @@ io.on('connection', (socket) => {
                 poster: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null,
                 overview: m.overview || 'No description available.'
             }));
-            socket.emit('browse-results', results);
+            socket.emit('browse-results', { category, genreId: genreId || '', results });
         } catch (error) {
             console.log('❌ Browse error:', error.message);
-            socket.emit('browse-results', []);
+            socket.emit('browse-results', { category, genreId: genreId || '', results: [] });
         }
     });
-
-    // --- GET GENRES LIST ---
+      // --- GET GENRES LIST ---
     socket.on('get-genres', async () => {
+        if (cachedGenres) {
+            socket.emit('genres-list', cachedGenres);
+            return;
+        }
         try {
             const url = `${TMDB_BASE_URL}/genre/movie/list?api_key=${TMDB_API_KEY}`;
             const data = await httpsGet(url);
-            socket.emit('genres-list', data.genres);
+            cachedGenres = data.genres;
+            socket.emit('genres-list', cachedGenres);
         } catch (error) {
             console.log('❌ Genres error:', error.message);
             socket.emit('genres-list', []);
@@ -224,7 +226,6 @@ io.on('connection', (socket) => {
     });
 
     // --- 🎬 PLAY TRAILER ---
-       // --- 🎬 PLAY TRAILER ---
     socket.on('play-trailer', async ({ roomCode, movieId }) => {
         if (!rooms[roomCode]) return;
         const movie = rooms[roomCode].playlist.find(m => m.id === movieId);

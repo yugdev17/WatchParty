@@ -201,19 +201,52 @@ function displayMovies(results) {
     });
 }
 
+// --- Browse cache ---
+const browseCache = new Map(); // key: "category|genreId", value: results
+
+function cacheKey(category, genreId) {
+    return category + '|' + (genreId || '');
+}
+
+function fetchBrowse(category, genreId) {
+    const key = cacheKey(category, genreId);
+    const cached = browseCache.get(key);
+
+    if (cached) {
+        // Instant! Use cache
+        displayMovies(cached);
+    } else {
+        // Show loading state
+        searchResults.innerHTML = '<p class="muted-text">Loading movies…</p>';
+        socket.emit('browse-movies', { category, genreId });
+    }
+}
+
 // Search input
 searchInput.addEventListener('input', () => {
     clearTimeout(searchTimeout);
     const query = searchInput.value.trim();
     if (query.length < 2) {
-        socket.emit('browse-movies', { category: currentCategory, genreId: currentGenreId });
+        fetchBrowse(currentCategory, currentGenreId);
         return;
     }
+    searchResults.innerHTML = '<p class="muted-text">Searching…</p>';
     searchTimeout = setTimeout(() => socket.emit('search-movies', { query }), 400);
 });
 
 socket.on('search-results', (results) => displayMovies(results));
-socket.on('browse-results', (results) => displayMovies(results));
+
+socket.on('browse-results', ({ category, genreId, results }) => {
+    // Only cache NON-EMPTY results — a failed request shouldn't poison the cache
+    if (results.length > 0) {
+        browseCache.set(cacheKey(category, genreId), results);
+    }
+    
+    // Only display if the user is still on this exact category/genre
+    if (category === currentCategory && genreId === (currentGenreId || '')) {
+        displayMovies(results);
+    }
+});
 
 // Genre list
 socket.on('genres-list', (genres) => {
@@ -234,7 +267,7 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
         tab.classList.add('active');
         currentCategory = tab.dataset.category;
         searchInput.value = '';
-        socket.emit('browse-movies', { category: currentCategory, genreId: currentGenreId });
+        fetchBrowse(currentCategory, currentGenreId);
     });
 });
 
@@ -242,7 +275,7 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
 document.getElementById('genre-select').addEventListener('change', (e) => {
     currentGenreId = e.target.value;
     searchInput.value = '';
-    socket.emit('browse-movies', { category: currentCategory, genreId: currentGenreId });
+    fetchBrowse(currentCategory, currentGenreId);
 });
 
 // ============================================
