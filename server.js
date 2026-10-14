@@ -2,7 +2,30 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const https = require('https');
 
+// Reliable HTTPS GET helper (avoids Node.js 24 fetch bugs on Windows)
+function httpsGet(url) {
+    return new Promise((resolve, reject) => {
+        const req = https.get(url, { family: 4, timeout: 10000 }, (res) => {
+            let data = '';
+            res.on('data', chunk => data += chunk);
+            res.on('end', () => {
+                if (res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        resolve(JSON.parse(data));
+                    } catch (e) {
+                        reject(new Error('Invalid JSON response'));
+                    }
+                } else {
+                    reject(new Error('HTTP ' + res.statusCode + ': ' + data.substring(0, 150)));
+                }
+            });
+        });
+        req.on('error', reject);
+        req.on('timeout', () => req.destroy(new Error('Request timed out')));
+    });
+}
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
@@ -119,13 +142,7 @@ io.on('connection', (socket) => {
         if (!query || query.length < 2) return;
         try {
             const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&include_adult=false`;
-            const response = await fetch(url);
-            if (!response.ok) {
-                console.log('❌ Search failed with status:', response.status);
-                socket.emit('search-results', []);
-                return;
-            }
-            const data = await response.json();
+            const data = await httpsGet(url);
             const results = data.results.slice(0, 10).map(m => ({
                 id: m.id,
                 title: m.title,
@@ -162,6 +179,7 @@ io.on('connection', (socket) => {
     });
 
     // --- 🎬 PLAY TRAILER ---
+       // --- 🎬 PLAY TRAILER ---
     socket.on('play-trailer', async ({ roomCode, movieId }) => {
         if (!rooms[roomCode]) return;
         const movie = rooms[roomCode].playlist.find(m => m.id === movieId);
@@ -171,13 +189,7 @@ io.on('connection', (socket) => {
             const fullUrl = `${TMDB_BASE_URL}/movie/${movie.tmdbId}/videos?api_key=${TMDB_API_KEY}`;
             console.log('🎬 Fetching trailer for:', movie.title);
             
-            const response = await fetch(fullUrl);
-            if (!response.ok) {
-                console.log('❌ TMDB returned status:', response.status);
-                socket.emit('error-message', 'Could not load trailer.');
-                return;
-            }
-            const data = await response.json();
+            const data = await httpsGet(fullUrl);
             const videos = data.results;
             const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube') 
                          || videos.find(v => v.site === 'YouTube');
@@ -195,7 +207,6 @@ io.on('connection', (socket) => {
             socket.emit('error-message', 'Could not load trailer.');
         }
     });
-
     // --- TRAILER PLAY/PAUSE SYNC ---
     socket.on('trailer-state-change', ({ roomCode, isPlaying, currentTime }) => {
         if (rooms[roomCode] && rooms[roomCode].trailerState.isOpen) {
