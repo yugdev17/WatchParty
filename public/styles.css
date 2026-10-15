@@ -85,6 +85,7 @@ body {
     transition: all 0.15s;
 }
 .icon-btn:hover { background: var(--bg-hover); }
+.icon-btn.small { padding: 4px 8px; font-size: 12px; }
 
 /* ============== SCREEN 1: LOBBY ============== */
 .screen {
@@ -485,11 +486,37 @@ body {
     font-family: inherit;
 }
 
+/* + Add button */
+.add-btn {
+    background-color: var(--bg-elevated);
+    color: var(--text-muted);
+    padding: 6px 10px;
+    font-size: 0.75em;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    margin: 0;
+    align-self: center;
+    font-weight: 600;
+    transition: all 0.2s;
+    font-family: inherit;
+    min-width: 62px;
+}
+.add-btn:hover {
+    background-color: var(--bg-hover);
+    color: var(--text);
+}
+.add-btn.added {
+    background-color: var(--success);
+    color: white;
+    border-color: var(--success);
+}
+
 /* ============== MODAL ============== */
 .modal {
     position: fixed;
     inset: 0;
-    background: rgba(0,0,0,0.92);
+    background: rgba(0,0,0,0.85);
     display: flex;
     justify-content: center;
     align-items: center;
@@ -503,6 +530,7 @@ body {
     width: 100%;
     max-width: 900px;
     border: 1px solid var(--border);
+    position: relative;
 }
 .modal-header {
     display: flex;
@@ -530,6 +558,317 @@ body {
     border: none;
     border-radius: 10px;
 }
+
+.trailer-loading {
+    position: absolute;
+    top: 68px;
+    left: 20px;
+    right: 20px;
+    bottom: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+    color: var(--text-muted);
+    font-size: 14px;
+    z-index: 10;
+    border-radius: 10px;
+}
+
+/* ============== POLL MODAL ============== */
+.poll-modal-content {
+    max-width: 720px;
+    width: 100%;
+    max-height: 82vh;
+    display: flex;
+    flex-direction: column;
+    margin: auto;
+    padding: 24px;
+}
+
+.poll-top-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--bg-elevated);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.poll-timer {
+    color: #ffb74d;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+.poll-timer.urgent { color: #f44336; animation: pulse 1s infinite; }
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.poll-votes-info { color: var(--text-muted); }
+.poll-votes-info strong { color: var(--text); font-size: 1.1em; }
+
+.poll-voted-status {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 0 10px;
+}
+
+#poll-modal-options {
+    flex: 1;
+    max-height: 52vh;
+    overflow-y: auto;
+    padding: 4px 12px 16px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+/* Thicker visible scrollbar */
+#poll-modal-options::-webkit-scrollbar {
+    width: 10px;
+}
+#poll-modal-options::-webkit-scrollbar-track {
+    background: var(--bg);
+    border-radius: 5px;
+}
+#poll-modal-options::-webkit-scrollbar-thumb {
+    background: #3a3a44;
+    border-radius: 5px;
+    border: 2px solid var(--bg);
+}
+#poll-modal-options::-webkit-scrollbar-thumb:hover {
+    background: var(--accent);
+}
+
+#poll-modal-options .poll-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    cursor: pointer;
+    overflow: hidden;
+    transition: border-color 0.15s, transform 0.1s;
+    font-size: 14px;
+    user-select: none;
+    flex-shrink: 0;
+}
+#poll-modal-options .poll-option:hover { border-color: var(--accent); }
+#poll-modal-options .poll-option:active { transform: scale(0.99); }
+#poll-modal-options .poll-option.my-vote { border-color: var(--success); }
+#poll-modal-options .poll-option.final-winner {
+    border-color: var(--success);
+    background: rgba(76, 175, 80, 0.08);
+}
+
+#poll-modal-options .poll-option .poll-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: rgba(229, 9, 20, 0.25);
+    transition: width 0.4s ease;
+    z-index: 0;
+}
+#poll-modal-options .poll-option.my-vote .poll-bar {
+    background: rgba(76, 175, 80, 0.3);
+}
+
+#poll-modal-options .poll-option img {
+    width: 38px;
+    height: 56px;
+    border-radius: 4px;
+    object-fit: cover;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    background: #000;
+}
+
+.poll-option-content {
+    flex: 1;
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.poll-option-title {
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.poll-option-rating {
+    font-size: 0.8em;
+    color: #ffb74d;
+}
+
+.poll-option-right {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.poll-option-count {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--text);
+    min-width: 22px;
+    text-align: right;
+}
+
+.poll-my-votes {
+    display: flex;
+    gap: 3px;
+}
+
+.poll-my-votes .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 4px rgba(76, 175, 80, 0.6);
+}
+
+.poll-remove-btn {
+    background: rgba(244, 67, 54, 0.15);
+    border: 1px solid rgba(244, 67, 54, 0.4);
+    color: #f44336;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 15px;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-weight: bold;
+}
+.poll-remove-btn:hover { background: rgba(244, 67, 54, 0.3); }
+
+/* Winner card */
+.poll-winner-display {
+    padding: 20px;
+    background: linear-gradient(135deg, #1a1a1f, #2a2a35);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 14px;
+    text-align: center;
+    font-size: 14px;
+    line-height: 1.5;
+}
+.poll-winner-display .winner-title {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+    margin: 10px 0 4px;
+}
+.poll-winner-display .winner-rating {
+    color: #ffb74d;
+    font-size: 13px;
+}
+.poll-winner-display .winner-poster {
+    width: 110px;
+    height: 165px;
+    border-radius: 8px;
+    margin: 0 auto 12px;
+    display: block;
+    background: #000;
+    object-fit: cover;
+}
+
+#poll-final-options {
+    max-height: 35vh;
+    overflow-y: auto;
+    padding: 4px 10px 4px 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+#poll-final-options::-webkit-scrollbar { width: 10px; }
+#poll-final-options::-webkit-scrollbar-track { background: var(--bg); border-radius: 5px; }
+#poll-final-options::-webkit-scrollbar-thumb {
+    background: #3a3a44;
+    border-radius: 5px;
+    border: 2px solid var(--bg);
+}
+#poll-final-options::-webkit-scrollbar-thumb:hover { background: var(--accent); }
+
+#poll-final-options .poll-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+#poll-final-options .poll-option.final-winner {
+    border-color: var(--success);
+    background: rgba(76, 175, 80, 0.08);
+}
+#poll-final-options .poll-option .poll-bar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: rgba(229, 9, 20, 0.25);
+    transition: width 0.4s ease;
+    z-index: 0;
+}
+#poll-final-options .poll-option.final-winner .poll-bar {
+    background: rgba(76, 175, 80, 0.3);
+}
+#poll-final-options .poll-option img {
+    width: 38px;
+    height: 56px;
+    border-radius: 4px;
+    object-fit: cover;
+    position: relative;
+    z-index: 1;
+    flex-shrink: 0;
+    background: #000;
+}
+
+#poll-done-btn { margin-top: 14px; }
+
+#poll-declare-row { margin-top: 12px; }
+
+#poll-declare-btn {
+    background: var(--success);
+    animation: glow 1.5s ease-in-out infinite alternate;
+}
+
+@keyframes glow {
+    from { box-shadow: 0 0 0 rgba(76, 175, 80, 0); }
+    to   { box-shadow: 0 0 12px rgba(76, 175, 80, 0.6); }
+}
+
 /* ============== EMOJI FLOAT OVERLAY ============== */
 .reaction-overlay {
     position: fixed;
@@ -585,48 +924,7 @@ body {
     .room-code { font-size: 15px; }
 }
 
-.modal-content {
-    position: relative;
-}
-
-.trailer-loading {
-    position: absolute;
-    top: 68px;      /* below the modal header */
-    left: 20px;
-    right: 20px;
-    bottom: 20px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-    color: var(--text-muted);
+#winner-trailer-btn {
+    padding: 10px 20px;
     font-size: 14px;
-    z-index: 10;
-    border-radius: 10px;
-}
-
-/* + Add button styles */
-.add-btn {
-    background-color: var(--bg-elevated);
-    color: var(--text-muted);
-    padding: 6px 10px;
-    font-size: 0.75em;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    cursor: pointer;
-    margin: 0;
-    align-self: center;
-    font-weight: 600;
-    transition: all 0.2s;
-    font-family: inherit;
-    min-width: 62px;
-}
-.add-btn:hover {
-    background-color: var(--bg-hover);
-    color: var(--text);
-}
-.add-btn.added {
-    background-color: var(--success);
-    color: white;
-    border-color: var(--success);
 }

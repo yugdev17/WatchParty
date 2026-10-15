@@ -32,6 +32,23 @@ const copyInviteBtn = document.getElementById('copy-invite-btn');
 const inviteBanner = document.getElementById('invite-banner');
 const inviteRoomCode = document.getElementById('invite-room-code');
 
+// Poll elements
+const pollHeaderBtn = document.getElementById('poll-header-btn');
+const pollModal = document.getElementById('poll-modal');
+const pollModalCloseBtn = document.getElementById('poll-modal-close-btn');
+const pollVotingView = document.getElementById('poll-voting-view');
+const pollResultsView = document.getElementById('poll-results-view');
+const pollCountdown = document.getElementById('poll-countdown');
+const pollVotesLeft = document.getElementById('poll-votes-left');
+const pollResetBtn = document.getElementById('poll-reset-btn');
+const pollModalOptions = document.getElementById('poll-modal-options');
+const pollWinnerDisplay = document.getElementById('poll-winner-display');
+const pollFinalOptions = document.getElementById('poll-final-options');
+const pollDoneBtn = document.getElementById('poll-done-btn');
+const pollVotedStatus = document.getElementById('poll-voted-status');
+const pollDeclareRow = document.getElementById('poll-declare-row');
+const pollDeclareBtn = document.getElementById('poll-declare-btn');
+
 // Lobby flow
 const showEnterCodeBtn = document.getElementById('show-enter-code-btn');
 const backBtn = document.getElementById('back-btn');
@@ -50,6 +67,10 @@ let invitedRoomCode = null;
 let searchTimeout;
 let currentCategory = 'trending';
 let currentGenreId = '';
+let currentPlaylist = [];
+let currentPoll = null;
+let currentPollResults = null;
+let pollCountdownInterval = null;
 
 // ============================================
 // INVITE LINK DETECTION
@@ -62,7 +83,6 @@ let currentGenreId = '';
         inviteRoomCode.textContent = invitedRoomCode;
         inviteBanner.classList.remove('hidden');
 
-        // Hide choice buttons, show join-only
         lobbyActions.classList.add('hidden');
         enterCodeSection.classList.remove('hidden');
         roomCodeInput.classList.add('hidden');
@@ -138,6 +158,7 @@ socket.on('user-list', (users) => {
 socket.on('error-message', (msg) => {
     errorMsg.textContent = msg;
     if (msg.toLowerCase().includes('trailer')) alert(msg);
+    if (msg.toLowerCase().includes('poll')) alert(msg);
 });
 
 function showRoomView(roomCode) {
@@ -154,7 +175,7 @@ copyInviteBtn.addEventListener('click', () => {
     const inviteUrl = `${window.location.origin}?room=${currentRoomCode}`;
 
     navigator.clipboard.writeText(inviteUrl).then(() => {
-        copyInviteBtn.textContent = '✅ Copied!';
+        copyInviteBtn.textContent = '✅';
         copyInviteBtn.style.backgroundColor = '#4CAF50';
         setTimeout(() => {
             copyInviteBtn.textContent = '🔗';
@@ -202,7 +223,7 @@ function displayMovies(results) {
 }
 
 // --- Browse cache ---
-const browseCache = new Map(); // key: "category|genreId", value: results
+const browseCache = new Map();
 
 function cacheKey(category, genreId) {
     return category + '|' + (genreId || '');
@@ -213,16 +234,13 @@ function fetchBrowse(category, genreId) {
     const cached = browseCache.get(key);
 
     if (cached) {
-        // Instant! Use cache
         displayMovies(cached);
     } else {
-        // Show loading state
         searchResults.innerHTML = '<p class="muted-text">Loading movies…</p>';
         socket.emit('browse-movies', { category, genreId });
     }
 }
 
-// Search input
 searchInput.addEventListener('input', () => {
     clearTimeout(searchTimeout);
     const query = searchInput.value.trim();
@@ -237,18 +255,14 @@ searchInput.addEventListener('input', () => {
 socket.on('search-results', (results) => displayMovies(results));
 
 socket.on('browse-results', ({ category, genreId, results }) => {
-    // Only cache NON-EMPTY results — a failed request shouldn't poison the cache
     if (results.length > 0) {
         browseCache.set(cacheKey(category, genreId), results);
     }
-    
-    // Only display if the user is still on this exact category/genre
     if (category === currentCategory && genreId === (currentGenreId || '')) {
         displayMovies(results);
     }
 });
 
-// Genre list
 socket.on('genres-list', (genres) => {
     const select = document.getElementById('genre-select');
     select.innerHTML = '<option value="">All Genres</option>';
@@ -260,7 +274,6 @@ socket.on('genres-list', (genres) => {
     });
 });
 
-// Category tabs
 document.querySelectorAll('.cat-tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.cat-tab').forEach(t => t.classList.remove('active'));
@@ -271,7 +284,6 @@ document.querySelectorAll('.cat-tab').forEach(tab => {
     });
 });
 
-// Genre dropdown
 document.getElementById('genre-select').addEventListener('change', (e) => {
     currentGenreId = e.target.value;
     searchInput.value = '';
@@ -282,6 +294,7 @@ document.getElementById('genre-select').addEventListener('change', (e) => {
 // SHARED PLAYLIST
 // ============================================
 socket.on('playlist-updated', (playlist) => {
+    currentPlaylist = playlist;
     playlistItems.innerHTML = '';
     if (playlist.length === 0) {
         playlistItems.innerHTML = '<p class="muted-text">No movies yet. Add from the Movies tab!</p>';
@@ -315,10 +328,10 @@ socket.on('playlist-updated', (playlist) => {
 // TRAILER
 // ============================================
 socket.on('show-trailer', ({ title, key }) => {
+    console.log('🎬 show-trailer received:', title, key);
     trailerTitle.textContent = `▶ ${title}`;
     trailerModal.classList.remove('hidden');
 
-    // Show loading text
     const loading = document.getElementById('trailer-loading');
     if (loading) loading.classList.remove('hidden');
 
@@ -332,7 +345,6 @@ socket.on('show-trailer', ({ title, key }) => {
 window.buildYtPlayer = function(videoKey) {
     const loading = document.getElementById('trailer-loading');
 
-    // Reuse existing player
     if (ytPlayer && typeof ytPlayer.loadVideoById === 'function') {
         ytPlayer.loadVideoById(videoKey);
         setTimeout(() => { if (loading) loading.classList.add('hidden'); }, 800);
@@ -529,7 +541,6 @@ socket.on('seek-video', (time) => {
     setTimeout(() => { syncLock = false; }, 500);
 });
 
-// Host heartbeat
 setInterval(() => {
     if (isHost && !videoPlayer.paused && !isBuffering && !syncLock && currentRoomCode) {
         socket.emit('sync-time', { roomCode: currentRoomCode, currentTime: videoPlayer.currentTime });
@@ -560,8 +571,223 @@ document.querySelectorAll('.panel-tab').forEach(tab => {
 });
 
 // ============================================
-// LEAVE ROOM
+// GROUP POLLS
 // ============================================
+
+pollHeaderBtn.addEventListener('click', () => {
+    if (currentPollResults) {
+        pollModal.classList.remove('hidden');
+        return;
+    }
+
+    if (currentPoll && currentPoll.isActive) {
+        renderActivePoll();
+        pollModal.classList.remove('hidden');
+        return;
+    }
+
+    if (!isHost) {
+        alert('Only the host can start a poll. Wait for them to start one!');
+        return;
+    }
+
+    if (currentPlaylist.length < 2) {
+        alert('You need at least 2 movies in the playlist to start a poll.');
+        return;
+    }
+
+    socket.emit('create-poll', { roomCode: currentRoomCode });
+});
+
+pollModalCloseBtn.addEventListener('click', () => {
+    pollModal.classList.add('hidden');
+    if (pollCountdownInterval) clearInterval(pollCountdownInterval);
+});
+
+pollDoneBtn.addEventListener('click', () => {
+    socket.emit('dismiss-poll', { roomCode: currentRoomCode });
+    pollModal.classList.add('hidden');
+});
+
+pollResetBtn.addEventListener('click', () => {
+    socket.emit('reset-my-votes', { roomCode: currentRoomCode });
+});
+
+pollDeclareBtn.addEventListener('click', () => {
+    socket.emit('close-poll', { roomCode: currentRoomCode });
+});
+
+socket.on('poll-updated', (poll) => {
+    currentPoll = poll;
+    currentPollResults = null;
+    updatePollHeaderBtn(true);
+
+    if (!pollModal.classList.contains('hidden')) {
+        renderActivePoll();
+    }
+});
+
+socket.on('poll-results', (results) => {
+    currentPollResults = results;
+    currentPoll = null;
+    if (pollCountdownInterval) clearInterval(pollCountdownInterval);
+    updatePollHeaderBtn(false);
+
+    pollVotingView.classList.add('hidden');
+    pollResultsView.classList.remove('hidden');
+    renderPollResults(results);
+    pollModal.classList.remove('hidden');
+});
+
+socket.on('poll-dismissed', () => {
+    currentPoll = null;
+    currentPollResults = null;
+    pollModal.classList.add('hidden');
+    if (pollCountdownInterval) clearInterval(pollCountdownInterval);
+    updatePollHeaderBtn(false);
+});
+
+function updatePollHeaderBtn(active) {
+    if (active) {
+        pollHeaderBtn.style.background = 'var(--accent)';
+        pollHeaderBtn.style.borderColor = 'var(--accent)';
+    } else {
+        pollHeaderBtn.style.background = '';
+        pollHeaderBtn.style.borderColor = '';
+    }
+}
+
+function renderActivePoll() {
+    if (!currentPoll) return;
+
+    pollVotingView.classList.remove('hidden');
+    pollResultsView.classList.add('hidden');
+
+    const userTotalVotes = currentPoll.options.reduce(
+        (sum, opt) => sum + (opt.myVotes || 0), 0
+    );
+    const votesLeft = Math.max(0, 2 - userTotalVotes);
+    pollVotesLeft.textContent = votesLeft;
+
+    pollVotedStatus.textContent = `${currentPoll.totalVoters} of ${currentPoll.totalUsers} voted`;
+
+    if (currentPoll.allVoted && isHost) {
+        pollDeclareRow.classList.remove('hidden');
+    } else {
+        pollDeclareRow.classList.add('hidden');
+    }
+
+    startCountdown(currentPoll.endTime);
+
+    pollModalOptions.innerHTML = '';
+    currentPoll.options.forEach(opt => {
+        const myVoteCount = opt.myVotes || 0;
+
+        const div = document.createElement('div');
+        div.className = 'poll-option' + (myVoteCount > 0 ? ' my-vote' : '');
+        div.innerHTML = `
+            <img src="${opt.poster || 'https://via.placeholder.com/32x48/333/888?text=?'}" alt="">
+            <div class="poll-option-content">
+                <span class="poll-option-title">${opt.title}</span>
+                ${opt.rating ? `<span class="poll-option-rating">⭐ ${opt.rating}</span>` : ''}
+            </div>
+            <div class="poll-option-right">
+                ${myVoteCount > 0 ? `<div class="poll-my-votes">${'<div class="dot"></div>'.repeat(myVoteCount)}</div>` : ''}
+                ${myVoteCount > 0 ? `<button class="poll-remove-btn" title="Remove one vote">−</button>` : ''}
+            </div>
+        `;
+
+        div.addEventListener('click', (e) => {
+            if (e.target.closest('.poll-remove-btn')) return;
+            if (votesLeft <= 0) {
+                alert('You have used both your votes. Click Reset to change them.');
+                return;
+            }
+            socket.emit('vote-poll', {
+                roomCode: currentRoomCode,
+                optionId: opt.id,
+                action: 'add'
+            });
+        });
+
+        const removeBtn = div.querySelector('.poll-remove-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                socket.emit('vote-poll', {
+                    roomCode: currentRoomCode,
+                    optionId: opt.id,
+                    action: 'remove'
+                });
+            });
+        }
+
+        pollModalOptions.appendChild(div);
+    });
+}
+
+function startCountdown(endTime) {
+    if (pollCountdownInterval) clearInterval(pollCountdownInterval);
+
+    function tick() {
+        const remaining = Math.max(0, endTime - Date.now());
+        const seconds = Math.floor(remaining / 1000);
+        const mm = Math.floor(seconds / 60);
+        const ss = seconds % 60;
+        pollCountdown.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
+
+        if (remaining < 10000) {
+            pollCountdown.classList.add('urgent');
+        } else {
+            pollCountdown.classList.remove('urgent');
+        }
+
+        if (remaining <= 0) {
+            clearInterval(pollCountdownInterval);
+        }
+    }
+
+    tick();
+    pollCountdownInterval = setInterval(tick, 500);
+}
+
+function renderPollResults(results) {
+    const { winner, isTie } = results;
+
+    // Simple winner card
+    let winnerHTML = '';
+    if (isTie) {
+        winnerHTML = `
+            <div style="font-size: 20px; margin-bottom: 4px;">🤝</div>
+            <div style="color: #ffb74d; font-size: 12px; margin-bottom: 10px;">It's a tie! Breaking by rating…</div>
+            <img src="${winner.poster || 'https://via.placeholder.com/100x150/333/888?text=?'}" class="winner-poster" alt="">
+            <div class="winner-title">${winner.title}</div>
+            <div class="winner-rating">⭐ ${winner.rating}</div>
+            <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
+        `;
+    } else {
+        winnerHTML = `
+            <div style="font-size: 20px; margin-bottom: 10px;">🏆 Winner</div>
+            <img src="${winner.poster || 'https://via.placeholder.com/100x150/333/888?text=?'}" class="winner-poster" alt="">
+            <div class="winner-title">${winner.title}</div>
+            <div class="winner-rating">⭐ ${winner.rating}</div>
+            <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
+        `;
+    }
+    pollWinnerDisplay.innerHTML = winnerHTML;
+
+    // Wire up the trailer button
+       const trailerBtn = document.getElementById('winner-trailer-btn');
+    if (trailerBtn) {
+        trailerBtn.addEventListener('click', () => {
+            console.log('🎬 Watch Trailer clicked. movieId:', winner.id);
+            pollModal.classList.add('hidden');
+            socket.emit('play-trailer', { roomCode: currentRoomCode, movieId: winner.id });
+        });
+    }
+}
+
+
 document.getElementById('leave-btn').addEventListener('click', () => {
     window.location.reload();
 });

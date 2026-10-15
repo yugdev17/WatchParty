@@ -4,7 +4,19 @@ const { Server } = require('socket.io');
 const path = require('path');
 const https = require('https');
 
-// Reliable HTTPS GET helper (avoids Node.js 24 fetch bugs on Windows)
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+// 🔑 PUT YOUR REAL TMDB API KEY HERE
+const TMDB_API_KEY = 'd411e3bbc2de81f662b87cc90518f87f';
+const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
+
+console.log('🔑 API Key loaded, length:', TMDB_API_KEY.length);
+
+// Reliable HTTPS GET helper
 function httpsGet(url) {
     return new Promise((resolve, reject) => {
         const req = https.get(url, { family: 4, timeout: 10000 }, (res) => {
@@ -12,11 +24,8 @@ function httpsGet(url) {
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
                 if (res.statusCode >= 200 && res.statusCode < 300) {
-                    try {
-                        resolve(JSON.parse(data));
-                    } catch (e) {
-                        reject(new Error('Invalid JSON response'));
-                    }
+                    try { resolve(JSON.parse(data)); }
+                    catch (e) { reject(new Error('Invalid JSON response')); }
                 } else {
                     reject(new Error('HTTP ' + res.statusCode + ': ' + data.substring(0, 150)));
                 }
@@ -26,19 +35,9 @@ function httpsGet(url) {
         req.on('timeout', () => req.destroy(new Error('Request timed out')));
     });
 }
-const app = express();
-const server = http.createServer(app);
-const io = new Server(server);
 
-app.use(express.static(path.join(__dirname, 'public')));
-
-// 🔑 PUT YOUR REAL TMDB API KEY HERE (32 characters)
-const TMDB_API_KEY = 'd411e3bbc2de81f662b87cc90518f87f';
-const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
-
-console.log('🔑 API Key loaded, length:', TMDB_API_KEY.length);
-let cachedGenres = null;
 const rooms = {};
+let cachedGenres = null;
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
@@ -52,7 +51,9 @@ io.on('connection', (socket) => {
             videoState: { url: '', isPlaying: false, currentTime: 0 },
             messages: [],
             playlist: [],
-            trailerState: { isOpen: false, title: '', key: '' }
+            trailerState: { isOpen: false, title: '', key: '' },
+            poll: null,
+            pollTimer: null
         };
         socket.join(roomCode);
         socket.roomCode = roomCode;
@@ -76,6 +77,7 @@ io.on('connection', (socket) => {
             socket.emit('sync-video-state', room.videoState);
             socket.emit('chat-history', room.messages);
             socket.emit('playlist-updated', room.playlist);
+            if (room.poll) emitPollUpdate(roomCode);
         } else {
             socket.emit('error-message', 'Room not found. Check the code.');
         }
@@ -148,6 +150,7 @@ io.on('connection', (socket) => {
                 title: m.title,
                 year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
                 poster: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null,
+                rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : 0,
                 overview: m.overview || 'No description available.'
             }));
             socket.emit('search-results', results);
@@ -156,7 +159,8 @@ io.on('connection', (socket) => {
             socket.emit('search-results', []);
         }
     });
-    // --- BROWSE MOVIES (Categories & Filters) ---
+
+    // --- BROWSE MOVIES ---
     socket.on('browse-movies', async ({ category, genreId }) => {
         try {
             let url;
@@ -171,13 +175,13 @@ io.on('connection', (socket) => {
                 else endpoint = '/movie/popular';
                 url = `${TMDB_BASE_URL}${endpoint}?api_key=${TMDB_API_KEY}`;
             }
-
             const data = await httpsGet(url);
             const results = data.results.slice(0, 20).map(m => ({
                 id: m.id,
                 title: m.title,
                 year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
                 poster: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null,
+                rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : 0,
                 overview: m.overview || 'No description available.'
             }));
             socket.emit('browse-results', { category, genreId: genreId || '', results });
@@ -186,7 +190,8 @@ io.on('connection', (socket) => {
             socket.emit('browse-results', { category, genreId: genreId || '', results: [] });
         }
     });
-      // --- GET GENRES LIST ---
+
+    // --- GET GENRES ---
     socket.on('get-genres', async () => {
         if (cachedGenres) {
             socket.emit('genres-list', cachedGenres);
@@ -202,7 +207,6 @@ io.on('connection', (socket) => {
             socket.emit('genres-list', []);
         }
     });
-    
 
     // --- SHARED PLAYLIST ---
     socket.on('add-to-playlist', ({ roomCode, movie }) => {
@@ -225,42 +229,37 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 🎬 PLAY TRAILER ---
+    // --- PLAY TRAILER ---
     socket.on('play-trailer', async ({ roomCode, movieId }) => {
-        if (!rooms[roomCode]) return;
+        console.log('🎬 play-trailer requested. roomCode:', roomCode, 'movieId:', movieId);
+        if (!rooms[roomCode]) {
+            console.log('❌ Room not found');
+            return;
+        }
         const movie = rooms[roomCode].playlist.find(m => m.id === movieId);
-        if (!movie) return;
+        if (!movie) {
+            console.log('❌ Movie not found. Playlist IDs:', rooms[roomCode].playlist.map(m => m.id));
+            socket.emit('error-message', 'Movie not found in playlist.');
+            return;
+        }
+        console.log('✅ Found movie:', movie.title, '| TMDB ID:', movie.tmdbId);
 
         try {
             const fullUrl = `${TMDB_BASE_URL}/movie/${movie.tmdbId}/videos?api_key=${TMDB_API_KEY}`;
-            console.log('🎬 Fetching trailer for:', movie.title);
-            
             const data = await httpsGet(fullUrl);
             const videos = data.results;
-            const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube') 
+            const trailer = videos.find(v => v.type === 'Trailer' && v.site === 'YouTube')
                          || videos.find(v => v.site === 'YouTube');
 
             if (trailer) {
-                console.log('✅ Trailer found:', trailer.key);
                 rooms[roomCode].trailerState = { isOpen: true, title: movie.title, key: trailer.key };
                 io.to(roomCode).emit('show-trailer', { title: movie.title, key: trailer.key });
             } else {
-                console.log('❌ No YouTube trailer found');
                 socket.emit('error-message', 'No trailer available for this movie.');
             }
         } catch (error) {
             console.log('❌ Trailer error:', error.message);
             socket.emit('error-message', 'Could not load trailer.');
-        }
-    });
-        // --- 😀 EMOJI REACTIONS ---
-    socket.on('emoji-reaction', ({ roomCode, emoji }) => {
-        if (rooms[roomCode]) {
-            io.to(roomCode).emit('emoji-reaction', {
-                emoji: emoji,
-                username: socket.username,
-                id: Date.now() + '_' + Math.random().toString(36).substring(2, 6)
-            });
         }
     });
 
@@ -271,12 +270,198 @@ io.on('connection', (socket) => {
         }
     });
 
+    // --- 😀 EMOJI REACTIONS ---
+    socket.on('emoji-reaction', ({ roomCode, emoji }) => {
+        if (rooms[roomCode]) {
+            io.to(roomCode).emit('emoji-reaction', {
+                emoji: emoji,
+                username: socket.username,
+                id: Date.now() + '_' + Math.random().toString(36).substring(2, 6)
+            });
+        }
+    });
+
+    // --- 🗳️ GROUP POLLS ---
+
+    // Sends a sanitized poll to each user (no usernames shown)
+    function emitPollUpdate(roomCode) {
+        const room = rooms[roomCode];
+        if (!room || !room.poll) return;
+        const poll = room.poll;
+
+        // Track unique voters
+                const voters = new Set();
+        poll.options.forEach(opt => opt.votes.forEach(v => voters.add(v)));
+        const totalUsers = room.users.length;
+
+        // "All voted" = every user has used both of their 2 votes
+        const totalVotesCast = poll.options.reduce((sum, opt) => sum + opt.votes.length, 0);
+        const maxPossibleVotes = totalUsers * 2;
+        const allVoted = totalVotesCast >= maxPossibleVotes;
+
+        // Send a per-user view (each user only sees their own votes)
+                room.users.forEach(u => {
+            const optionsForUser = poll.options.map(opt => ({
+                id: opt.id,
+                title: opt.title,
+                poster: opt.poster,
+                rating: opt.rating,
+                myVotes: opt.votes.filter(v => v === u.name).length
+            }));
+
+            io.to(u.id).emit('poll-updated', {
+                isActive: poll.isActive,
+                createdBy: poll.createdBy,
+                endTime: poll.endTime,
+                allVoted: allVoted,
+                totalVoters: voters.size,
+                totalUsers: totalUsers,
+                options: optionsForUser
+            });
+        });
+    }
+
+    function closePollForRoom(roomCode) {
+        const room = rooms[roomCode];
+        if (!room || !room.poll) return;
+        const poll = room.poll;
+        if (!poll.isActive) return;
+
+        const results = poll.options.map(opt => ({
+            id: opt.id,
+            title: opt.title,
+            poster: opt.poster,
+            rating: opt.rating || 0,
+            count: opt.votes.length
+        }));
+
+        const maxVotes = Math.max(...results.map(r => r.count));
+        const topOptions = results.filter(r => r.count === maxVotes);
+
+        let winner, isTie = false;
+
+        if (maxVotes === 0) {
+            winner = results.reduce((best, curr) =>
+                curr.rating > best.rating ? curr : best, results[0]);
+        } else if (topOptions.length > 1) {
+            isTie = true;
+            winner = topOptions.reduce((best, curr) =>
+                curr.rating > best.rating ? curr : best, topOptions[0]);
+        } else {
+            winner = topOptions[0];
+        }
+
+        poll.isActive = false;
+        poll.results = {
+            winner,
+            isTie,
+            topOptions: topOptions.map(o => o.id),
+            counts: results,
+            totalVotes: maxVotes
+        };
+
+        if (room.pollTimer) {
+            clearTimeout(room.pollTimer);
+            room.pollTimer = null;
+        }
+
+        io.to(roomCode).emit('poll-results', poll.results);
+    }
+
+    socket.on('create-poll', ({ roomCode }) => {
+        if (!rooms[roomCode]) return;
+        const room = rooms[roomCode];
+
+        if (socket.id !== room.host) {
+            socket.emit('error-message', 'Only the host can start a poll.');
+            return;
+        }
+        if (room.playlist.length < 2) {
+            socket.emit('error-message', 'Need at least 2 movies in the playlist.');
+            return;
+        }
+        if (room.poll && room.poll.isActive) {
+            socket.emit('error-message', 'A poll is already active.');
+            return;
+        }
+
+        const POLL_DURATION = 60000;
+
+        room.poll = {
+            isActive: true,
+            createdBy: socket.username,
+            endTime: Date.now() + POLL_DURATION,
+            options: room.playlist.map(m => ({
+                id: m.id,
+                title: m.title,
+                poster: m.poster,
+                rating: m.rating || 0,
+                votes: []
+            }))
+        };
+
+        emitPollUpdate(roomCode);
+
+        if (room.pollTimer) clearTimeout(room.pollTimer);
+        room.pollTimer = setTimeout(() => closePollForRoom(roomCode), POLL_DURATION);
+    });
+
+    socket.on('vote-poll', ({ roomCode, optionId, action }) => {
+        if (!rooms[roomCode] || !rooms[roomCode].poll) return;
+        const poll = rooms[roomCode].poll;
+        if (!poll.isActive) return;
+
+        const username = socket.username;
+        const option = poll.options.find(o => o.id === optionId);
+        if (!option) return;
+
+        if (action === 'remove') {
+            const idx = option.votes.indexOf(username);
+            if (idx !== -1) option.votes.splice(idx, 1);
+        } else {
+            const userTotal = poll.options.reduce(
+                (sum, opt) => sum + opt.votes.filter(v => v === username).length, 0
+            );
+            if (userTotal >= 2) return;
+            option.votes.push(username);
+        }
+
+        emitPollUpdate(roomCode);
+    });
+
+    socket.on('reset-my-votes', ({ roomCode }) => {
+        if (!rooms[roomCode] || !rooms[roomCode].poll) return;
+        const poll = rooms[roomCode].poll;
+        if (!poll.isActive) return;
+        const username = socket.username;
+        poll.options.forEach(opt => {
+            opt.votes = opt.votes.filter(v => v !== username);
+        });
+        emitPollUpdate(roomCode);
+    });
+
+    socket.on('close-poll', ({ roomCode }) => {
+        if (!rooms[roomCode]) return;
+        if (socket.id !== rooms[roomCode].host) {
+            socket.emit('error-message', 'Only the host can close the poll.');
+            return;
+        }
+        closePollForRoom(roomCode);
+    });
+
+    socket.on('dismiss-poll', ({ roomCode }) => {
+        if (!rooms[roomCode]) return;
+        rooms[roomCode].poll = null;
+        io.to(roomCode).emit('poll-dismissed');
+    });
+
     // --- DISCONNECT ---
     socket.on('disconnect', () => {
         const roomCode = socket.roomCode;
         if (roomCode && rooms[roomCode]) {
             rooms[roomCode].users = rooms[roomCode].users.filter(u => u.id !== socket.id);
             if (rooms[roomCode].users.length === 0) {
+                if (rooms[roomCode].pollTimer) clearTimeout(rooms[roomCode].pollTimer);
                 delete rooms[roomCode];
             } else {
                 if (rooms[roomCode].host === socket.id) {
@@ -284,6 +469,8 @@ io.on('connection', (socket) => {
                     io.to(rooms[roomCode].host).emit('is-host', true);
                 }
                 io.to(roomCode).emit('user-list', rooms[roomCode].users);
+                // Re-emit poll so allVoted status updates
+                if (rooms[roomCode].poll) emitPollUpdate(roomCode);
             }
         }
     });
