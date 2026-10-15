@@ -22,6 +22,7 @@ const chatInput = document.getElementById('chat-input');
 const sendChatBtn = document.getElementById('send-chat-btn');
 const searchInput = document.getElementById('search-input');
 const searchResults = document.getElementById('search-results');
+const wishlistItems = document.getElementById('wishlist-items');
 const playlistItems = document.getElementById('playlist-items');
 const trailerModal = document.getElementById('trailer-modal');
 const trailerTitle = document.getElementById('trailer-title');
@@ -31,6 +32,14 @@ const reactionOverlay = document.getElementById('reaction-overlay');
 const copyInviteBtn = document.getElementById('copy-invite-btn');
 const inviteBanner = document.getElementById('invite-banner');
 const inviteRoomCode = document.getElementById('invite-room-code');
+
+// Promote modal
+const promoteModal = document.getElementById('promote-modal');
+const promoteCloseBtn = document.getElementById('promote-close-btn');
+const promoteTitle = document.getElementById('promote-title');
+const promoteUrlInput = document.getElementById('promote-url-input');
+const promoteCancelBtn = document.getElementById('promote-cancel-btn');
+const promoteConfirmBtn = document.getElementById('promote-confirm-btn');
 
 // Poll elements
 const pollHeaderBtn = document.getElementById('poll-header-btn');
@@ -67,10 +76,12 @@ let invitedRoomCode = null;
 let searchTimeout;
 let currentCategory = 'trending';
 let currentGenreId = '';
+let currentWishlist = [];
 let currentPlaylist = [];
 let currentPoll = null;
 let currentPollResults = null;
 let pollCountdownInterval = null;
+let promotingMovie = null;
 
 // ============================================
 // INVITE LINK DETECTION
@@ -144,7 +155,12 @@ socket.on('room-joined', (roomCode) => {
     socket.emit('browse-movies', { category: 'trending', genreId: '' });
 });
 
-socket.on('is-host', (status) => { isHost = status; });
+socket.on('is-host', (status) => {
+    isHost = status;
+    // Refresh playlist and wishlist so host-only buttons appear/disappear
+    if (currentWishlist.length) renderWishlist(currentWishlist);
+    if (currentPlaylist.length) renderPlaylist(currentPlaylist);
+});
 
 socket.on('user-list', (users) => {
     userList.innerHTML = '';
@@ -204,11 +220,11 @@ function displayMovies(results) {
                 <h4>${movie.title} <span style="color:#888;font-weight:normal;">(${movie.year})</span></h4>
                 <p>${movie.overview}</p>
             </div>
-            <button class="add-btn">+ Add</button>
+            <button class="add-btn">+ Wish</button>
         `;
 
         div.addEventListener('click', () => {
-            socket.emit('add-to-playlist', { roomCode: currentRoomCode, movie });
+            socket.emit('add-to-wishlist', { roomCode: currentRoomCode, movie });
 
             const addBtn = div.querySelector('.add-btn');
             addBtn.textContent = '✓ Added';
@@ -291,44 +307,155 @@ document.getElementById('genre-select').addEventListener('change', (e) => {
 });
 
 // ============================================
-// SHARED PLAYLIST
+// WISHLIST (TMDB movies)
 // ============================================
-socket.on('playlist-updated', (playlist) => {
-    currentPlaylist = playlist;
-    playlistItems.innerHTML = '';
-    if (playlist.length === 0) {
-        playlistItems.innerHTML = '<p class="muted-text">No movies yet. Add from the Movies tab!</p>';
+socket.on('wishlist-updated', (wishlist) => {
+    currentWishlist = wishlist;
+    renderWishlist(wishlist);
+});
+
+function renderWishlist(wishlist) {
+    wishlistItems.innerHTML = '';
+    if (wishlist.length === 0) {
+        wishlistItems.innerHTML = '<p class="muted-text">No movies in the wishlist yet. Add from the Movies tab!</p>';
         return;
     }
-    playlist.forEach(movie => {
+    wishlist.forEach(movie => {
         const div = document.createElement('div');
         div.className = 'playlist-item';
         div.innerHTML = `
             <img src="${movie.poster || 'https://via.placeholder.com/35x52/333/888?text=?'}" alt="${movie.title}">
             <div class="playlist-item-info">
                 <h4>${movie.title}</h4>
-                <span>${movie.year} • added by ${movie.addedBy || 'user'}</span>
+                <span>${movie.year}${movie.rating ? ' · ⭐ ' + movie.rating : ''}</span>
             </div>
             <div class="playlist-item-actions">
-                <button class="play-trailer-btn" style="background-color: #e50914;">▶ Trailer</button>
+                <button class="trailer-btn" style="background-color: #e50914;">▶ Trailer</button>
+                ${isHost ? `<button class="promote-btn" style="background-color: #2196F3;">→ Playlist</button>` : ''}
                 <button class="remove-btn" style="background-color: #3a3a44;">✕</button>
             </div>
         `;
-        div.querySelector('.play-trailer-btn').addEventListener('click', () => {
-            socket.emit('play-trailer', { roomCode: currentRoomCode, movieId: movie.id });
+        div.querySelector('.trailer-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            socket.emit('play-trailer', { roomCode: currentRoomCode, tmdbId: movie.tmdbId, title: movie.title });
         });
-        div.querySelector('.remove-btn').addEventListener('click', () => {
-            socket.emit('remove-from-playlist', { roomCode: currentRoomCode, movieId: movie.id });
+        const promoteBtn = div.querySelector('.promote-btn');
+        if (promoteBtn) {
+            promoteBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openPromoteModal(movie);
+            });
+        }
+        div.querySelector('.remove-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            socket.emit('remove-from-wishlist', { roomCode: currentRoomCode, movieId: movie.id });
         });
+        wishlistItems.appendChild(div);
+    });
+}
+
+// ============================================
+// PLAYLIST (real videos with URLs)
+// ============================================
+socket.on('playlist-updated', (playlist) => {
+    currentPlaylist = playlist;
+    renderPlaylist(playlist);
+});
+
+function renderPlaylist(playlist) {
+    playlistItems.innerHTML = '';
+    if (playlist.length === 0) {
+        playlistItems.innerHTML = '<p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL below!</p>';
+        return;
+    }
+    playlist.forEach((item, index) => {
+        const div = document.createElement('div');
+        div.className = 'playlist-item';
+        div.innerHTML = `
+            <span class="playlist-index">${index + 1}</span>
+            <img src="${item.poster || 'https://via.placeholder.com/35x52/333/888?text=?'}" alt="${item.title}">
+            <div class="playlist-item-info">
+                <h4>${item.title}</h4>
+                <span>${item.url.substring(0, 30)}…</span>
+            </div>
+            <div class="playlist-item-actions">
+                <button class="play-btn" style="background-color: #4CAF50;">▶ Play</button>
+                ${isHost ? `<button class="remove-btn" style="background-color: #3a3a44;">✕</button>` : ''}
+            </div>
+        `;
+        div.querySelector('.play-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            socket.emit('play-from-playlist', { roomCode: currentRoomCode, itemId: item.id });
+        });
+        const removeBtn = div.querySelector('.remove-btn');
+        if (removeBtn) {
+            removeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                socket.emit('remove-from-playlist', { roomCode: currentRoomCode, itemId: item.id });
+            });
+        }
         playlistItems.appendChild(div);
     });
+}
+
+// ============================================
+// PROMOTE MODAL (wishlist → playlist)
+// ============================================
+function openPromoteModal(movie) {
+    promotingMovie = movie;
+    promoteTitle.textContent = `Add "${movie.title}" to Playlist`;
+    promoteUrlInput.value = '';
+    promoteModal.classList.remove('hidden');
+    promoteUrlInput.focus();
+}
+
+promoteCloseBtn.addEventListener('click', () => {
+    promoteModal.classList.add('hidden');
+    promotingMovie = null;
+});
+
+promoteCancelBtn.addEventListener('click', () => {
+    promoteModal.classList.add('hidden');
+    promotingMovie = null;
+});
+
+promoteConfirmBtn.addEventListener('click', () => {
+    const url = promoteUrlInput.value.trim();
+    if (!url) return alert('Please paste a video URL');
+    if (!promotingMovie) return;
+
+    socket.emit('add-to-playlist', {
+        roomCode: currentRoomCode,
+        item: {
+            title: promotingMovie.title,
+            url: url,
+            poster: promotingMovie.poster,
+            tmdbId: promotingMovie.tmdbId
+        }
+    });
+
+    // Auto-remove from wishlist after promoting
+    socket.emit('remove-from-wishlist', { roomCode: currentRoomCode, movieId: promotingMovie.id });
+
+    promoteModal.classList.add('hidden');
+    promotingMovie = null;
+
+    // Switch to playlist tab to show result
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
+    document.querySelector('[data-tab="playlist"]').classList.add('active');
+    document.getElementById('tab-playlist').classList.add('active');
+});
+
+// Allow Enter key
+promoteUrlInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') promoteConfirmBtn.click();
 });
 
 // ============================================
 // TRAILER
 // ============================================
 socket.on('show-trailer', ({ title, key }) => {
-    console.log('🎬 show-trailer received:', title, key);
     trailerTitle.textContent = `▶ ${title}`;
     trailerModal.classList.remove('hidden');
 
@@ -418,8 +545,12 @@ trailerModal.addEventListener('click', (e) => {
 });
 
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !trailerModal.classList.contains('hidden')) {
-        closeTrailerModal();
+    if (e.key === 'Escape') {
+        if (!trailerModal.classList.contains('hidden')) closeTrailerModal();
+        if (!promoteModal.classList.contains('hidden')) {
+            promoteModal.classList.add('hidden');
+            promotingMovie = null;
+        }
     }
 });
 
@@ -521,6 +652,13 @@ videoPlayer.addEventListener('seeked', () => {
     socket.emit('seek-video', { roomCode: currentRoomCode, currentTime: videoPlayer.currentTime });
 });
 
+// 🎬 AUTO-PLAY NEXT: when video ends, the host triggers the advance
+videoPlayer.addEventListener('ended', () => {
+    if (isHost && currentRoomCode) {
+        socket.emit('video-ended', { roomCode: currentRoomCode });
+    }
+});
+
 socket.on('play-video', (time) => {
     syncLock = true;
     if (Math.abs(videoPlayer.currentTime - time) > 1.0) videoPlayer.currentTime = time;
@@ -559,7 +697,7 @@ socket.on('sync-time', (hostTime) => {
 });
 
 // ============================================
-// SIDE PANEL TABS
+// SIDE PANEL TABS (4 tabs now)
 // ============================================
 document.querySelectorAll('.panel-tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -591,8 +729,8 @@ pollHeaderBtn.addEventListener('click', () => {
         return;
     }
 
-    if (currentPlaylist.length < 2) {
-        alert('You need at least 2 movies in the playlist to start a poll.');
+    if (currentWishlist.length < 2) {
+        alert('You need at least 2 movies in the wishlist to start a poll.');
         return;
     }
 
@@ -754,7 +892,6 @@ function startCountdown(endTime) {
 function renderPollResults(results) {
     const { winner, isTie } = results;
 
-    // Simple winner card
     let winnerHTML = '';
     if (isTie) {
         winnerHTML = `
@@ -764,6 +901,7 @@ function renderPollResults(results) {
             <div class="winner-title">${winner.title}</div>
             <div class="winner-rating">⭐ ${winner.rating}</div>
             <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
+            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3;">→ Add to Playlist</button>` : ''}
         `;
     } else {
         winnerHTML = `
@@ -772,22 +910,37 @@ function renderPollResults(results) {
             <div class="winner-title">${winner.title}</div>
             <div class="winner-rating">⭐ ${winner.rating}</div>
             <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
+            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3;">→ Add to Playlist</button>` : ''}
         `;
     }
     pollWinnerDisplay.innerHTML = winnerHTML;
 
-    // Wire up the trailer button
-       const trailerBtn = document.getElementById('winner-trailer-btn');
+    const trailerBtn = document.getElementById('winner-trailer-btn');
     if (trailerBtn) {
         trailerBtn.addEventListener('click', () => {
-            console.log('🎬 Watch Trailer clicked. movieId:', winner.id);
             pollModal.classList.add('hidden');
-            socket.emit('play-trailer', { roomCode: currentRoomCode, movieId: winner.id });
+            socket.emit('play-trailer', { roomCode: currentRoomCode, tmdbId: winner.tmdbId, title: winner.title });
+        });
+    }
+
+    const promoteBtn = document.getElementById('winner-promote-btn');
+    if (promoteBtn) {
+        promoteBtn.addEventListener('click', () => {
+            pollModal.classList.add('hidden');
+            // Find the full wishlist item to keep poster/rating
+            const wlItem = currentWishlist.find(w => w.tmdbId === winner.tmdbId) || {
+                title: winner.title,
+                poster: winner.poster,
+                tmdbId: winner.tmdbId
+            };
+            openPromoteModal(wlItem);
         });
     }
 }
 
-
+// ============================================
+// LEAVE ROOM
+// ============================================
 document.getElementById('leave-btn').addEventListener('click', () => {
     window.location.reload();
 });

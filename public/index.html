@@ -82,7 +82,8 @@
                 <div class="panel-tabs">
                     <button class="panel-tab active" data-tab="chat">💬 Chat</button>
                     <button class="panel-tab" data-tab="search">🔍 Movies</button>
-                    <button class="panel-tab" data-tab="playlist">🎬 Playlist</button>
+                    <button class="panel-tab" data-tab="wishlist">📝 Wishlist</button>
+                    <button class="panel-tab" data-tab="playlist">▶ Playlist</button>
                 </div>
 
                 <!-- Chat Tab -->
@@ -115,16 +116,39 @@
                     </div>
                 </div>
 
+                <!-- Wishlist Tab -->
+                <div class="panel-content" id="tab-wishlist">
+                    <div class="wishlist-items" id="wishlist-items">
+                        <p class="muted-text">No movies in the wishlist yet. Add from the Movies tab!</p>
+                    </div>
+                </div>
+
                 <!-- Playlist Tab -->
                 <div class="panel-content" id="tab-playlist">
                     <div class="playlist-items" id="playlist-items">
-                        <p class="muted-text">No movies yet. Add from the Movies tab!</p>
+                        <p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL below!</p>
                     </div>
                 </div>
             </aside>
         </div>
 
         <div class="reaction-overlay" id="reaction-overlay"></div>
+    </div>
+
+    <!-- Promote Modal (Wishlist → Playlist) -->
+    <div id="promote-modal" class="modal hidden">
+        <div class="modal-content promote-modal-content">
+            <div class="modal-header">
+                <h3 id="promote-title">Add to Playlist</h3>
+                <button id="promote-close-btn" class="icon-btn">✕</button>
+            </div>
+            <p class="muted-text" style="text-align: left; padding: 0 0 10px;">Paste a direct video URL (.mp4) to add this movie to the playlist:</p>
+            <input type="text" id="promote-url-input" class="input-field" placeholder="https://...">
+            <div class="lobby-actions" style="margin-top: 16px;">
+                <button id="promote-cancel-btn" class="btn btn-secondary">Cancel</button>
+                <button id="promote-confirm-btn" class="btn btn-primary">Add to Playlist</button>
+            </div>
+        </div>
     </div>
 
     <!-- Poll Modal -->
@@ -149,7 +173,7 @@
                 </div>
             </div>
 
-                        <!-- Results view -->
+            <!-- Results view -->
             <div id="poll-results-view" class="hidden">
                 <div id="poll-winner-display" class="poll-winner-display"></div>
                 <button id="poll-done-btn" class="btn btn-secondary full-width" style="margin-top: 14px;">Done</button>
