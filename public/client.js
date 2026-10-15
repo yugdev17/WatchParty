@@ -33,17 +33,13 @@ const copyInviteBtn = document.getElementById('copy-invite-btn');
 const inviteBanner = document.getElementById('invite-banner');
 const inviteRoomCode = document.getElementById('invite-room-code');
 
-// Users chip + dropdown
 const usersChip = document.getElementById('users-chip');
 const usersDropdown = document.getElementById('users-dropdown');
 const usersCount = document.getElementById('users-count');
 
-// Toast
 const toast = document.getElementById('toast');
-const toastIcon = toast.querySelector('.toast-icon');
 const toastText = toast.querySelector('.toast-text');
 
-// Promote modal
 const promoteModal = document.getElementById('promote-modal');
 const promoteCloseBtn = document.getElementById('promote-close-btn');
 const promoteTitle = document.getElementById('promote-title');
@@ -51,7 +47,6 @@ const promoteUrlInput = document.getElementById('promote-url-input');
 const promoteCancelBtn = document.getElementById('promote-cancel-btn');
 const promoteConfirmBtn = document.getElementById('promote-confirm-btn');
 
-// Poll elements
 const startPollBtn = document.getElementById('start-poll-btn');
 const pollEmpty = document.getElementById('poll-empty');
 const pollEmptyMsg = document.getElementById('poll-empty-msg');
@@ -68,7 +63,6 @@ const pollVotedStatus = document.getElementById('poll-voted-status');
 const pollDeclareRow = document.getElementById('poll-declare-row');
 const pollDeclareBtn = document.getElementById('poll-declare-btn');
 
-// Lobby flow
 const showEnterCodeBtn = document.getElementById('show-enter-code-btn');
 const backBtn = document.getElementById('back-btn');
 const enterCodeSection = document.getElementById('enter-code-section');
@@ -96,8 +90,13 @@ let promotingMovie = null;
 let activeTab = 'chat';
 let hasConnectedOnce = false;
 
+// Fuzzy search pool
+let moviePool = [];      // grows as we see movies
+let fuse = null;         // Fuse.js instance
+let poolRequested = false;
+
 // ============================================
-// SESSION STORAGE (for reconnection)
+// SESSION STORAGE (reconnection)
 // ============================================
 const SESSION_KEY = 'watchparty_session';
 
@@ -117,7 +116,6 @@ function loadSession() {
         const raw = localStorage.getItem(SESSION_KEY);
         if (!raw) return null;
         const data = JSON.parse(raw);
-        // Expire sessions older than 2 hours
         if (Date.now() - data.savedAt > 2 * 60 * 60 * 1000) {
             localStorage.removeItem(SESSION_KEY);
             return null;
@@ -133,7 +131,7 @@ function clearSession() {
 }
 
 // ============================================
-// TOAST NOTIFICATIONS
+// TOAST
 // ============================================
 let toastTimeout = null;
 
@@ -159,15 +157,52 @@ function hideToast() {
 }
 
 // ============================================
-// SOCKET CONNECTION EVENTS (reconnection)
+// FUZZY SEARCH POOL
+// ============================================
+function rebuildFuse() {
+    if (typeof Fuse === 'undefined') return;
+    fuse = new Fuse(moviePool, {
+        keys: ['title'],
+        threshold: 0.4,          // 0 = exact, 1 = match anything
+        distance: 100,
+        includeScore: true,
+        minMatchCharLength: 3
+    });
+}
+
+function addMoviesToPool(movies) {
+    if (!movies || !movies.length) return;
+    const existingIds = new Set(moviePool.map(m => m.id));
+    let added = 0;
+    movies.forEach(m => {
+        if (!existingIds.has(m.id)) {
+            moviePool.push(m);
+            added++;
+        }
+    });
+    if (added > 0) {
+        rebuildFuse();
+        console.log('📚 Pool grew by', added, '→ total', moviePool.length);
+    }
+}
+
+function fuzzySearch(query) {
+    if (!fuse || !query) return [];
+    const results = fuse.search(query.trim(), { limit: 10 });
+    // Only keep decent matches (score < 0.55 = better match)
+    return results
+        .filter(r => r.score < 0.55)
+        .map(r => r.item);
+}
+
+// ============================================
+// SOCKET CONNECTION (reconnection)
 // ============================================
 socket.on('connect', () => {
     if (hasConnectedOnce) {
-        // This is a RE-connection
         console.log('🔌 Socket reconnected. Attempting to rejoin room…');
         const session = loadSession();
         if (session && session.roomCode) {
-            // Silently try to rejoin the room we were in
             currentRoomCode = session.roomCode;
             currentUsername = session.username;
             socket.emit('join-room', {
@@ -175,7 +210,6 @@ socket.on('connect', () => {
                 roomCode: session.roomCode
             });
         } else {
-            // No session — just hide the toast
             hideToast();
         }
     }
@@ -184,36 +218,9 @@ socket.on('connect', () => {
 
 socket.on('disconnect', (reason) => {
     console.log('🔌 Socket disconnected:', reason);
-    // Only show the toast if we're in a room
     if (currentRoomCode) {
         showToast('Reconnecting…', 'info', 0);
     }
-});
-
-// Handle reconnection success/failure via server responses
-socket.on('room-joined', (roomCode) => {
-    // If we already had this room (a reconnection), show success
-    const wasReconnect = (currentRoomCode === roomCode && roomView && !roomView.classList.contains('hidden'));
-    
-    currentRoomCode = roomCode;
-    currentUsername = usernameInput.value.trim() || currentUsername;
-    showRoomView(roomCode);
-    socket.emit('get-genres');
-    socket.emit('browse-movies', { category: 'trending', genreId: '' });
-    saveSession();
-    
-    if (wasReconnect) {
-        showToast('Reconnected', 'success', 2000);
-    }
-});
-
-socket.on('room-created', (roomCode) => {
-    currentRoomCode = roomCode;
-    currentUsername = usernameInput.value.trim();
-    showRoomView(roomCode);
-    socket.emit('get-genres');
-    socket.emit('browse-movies', { category: 'trending', genreId: '' });
-    saveSession();
 });
 
 // ============================================
@@ -242,7 +249,7 @@ socket.on('room-created', (roomCode) => {
 // AUTO-RESUME ON PAGE LOAD
 // ============================================
 (function tryAutoResume() {
-    if (invitedRoomCode) return; // invite link takes priority
+    if (invitedRoomCode) return;
     const session = loadSession();
     if (session && session.roomCode && session.username) {
         console.log('🔄 Found saved session, auto-rejoining:', session.roomCode);
@@ -294,6 +301,41 @@ joinBtn.addEventListener('click', () => {
 // ============================================
 // ROOM EVENTS
 // ============================================
+socket.on('room-created', (roomCode) => {
+    currentRoomCode = roomCode;
+    currentUsername = usernameInput.value.trim();
+    showRoomView(roomCode);
+    socket.emit('get-genres');
+    socket.emit('browse-movies', { category: 'trending', genreId: '' });
+    requestPoolOnce();
+    saveSession();
+});
+
+socket.on('room-joined', (roomCode) => {
+    const wasReconnect = (currentRoomCode === roomCode && !roomView.classList.contains('hidden'));
+    currentRoomCode = roomCode;
+    currentUsername = currentUsername || usernameInput.value.trim();
+    showRoomView(roomCode);
+    socket.emit('get-genres');
+    socket.emit('browse-movies', { category: 'trending', genreId: '' });
+    requestPoolOnce();
+    saveSession();
+    if (wasReconnect) {
+        showToast('Reconnected', 'success', 2000);
+    }
+});
+
+function requestPoolOnce() {
+    if (poolRequested) return;
+    poolRequested = true;
+    socket.emit('get-search-pool');
+}
+
+socket.on('search-pool', (movies) => {
+    console.log('📚 Search pool received:', movies.length, 'movies');
+    addMoviesToPool(movies);
+});
+
 socket.on('is-host', (status) => {
     isHost = status;
     if (currentWishlist.length) renderWishlist(currentWishlist);
@@ -312,13 +354,11 @@ socket.on('user-list', (users) => {
 });
 
 socket.on('error-message', (msg) => {
-    // If we were trying to auto-rejoin and the room is gone, clear session and go back to lobby
     if (msg.includes('Room not found') && currentRoomCode) {
         clearSession();
         currentRoomCode = '';
         currentUsername = '';
         hideToast();
-        // If room is open, go back to lobby
         if (roomView && !roomView.classList.contains('hidden')) {
             showToast('Room no longer exists', 'error', 3000);
             setTimeout(() => window.location.reload(), 1500);
@@ -359,7 +399,6 @@ if (usersChip) {
 // ============================================
 copyInviteBtn.addEventListener('click', () => {
     const inviteUrl = `${window.location.origin}?room=${currentRoomCode}`;
-
     navigator.clipboard.writeText(inviteUrl).then(() => {
         const original = copyInviteBtn.innerHTML;
         copyInviteBtn.innerHTML = '✅ Copied!';
@@ -376,12 +415,20 @@ copyInviteBtn.addEventListener('click', () => {
 });
 
 // ============================================
-// MOVIE DISCOVERY
+// MOVIE DISCOVERY (Search + Browse + Fuzzy)
 // ============================================
-function displayMovies(results) {
+function displayMovies(results, opts = {}) {
     searchResults.innerHTML = '';
+
+    if (opts.fuzzyMessage) {
+        const banner = document.createElement('div');
+        banner.className = 'fuzzy-banner';
+        banner.textContent = opts.fuzzyMessage;
+        searchResults.appendChild(banner);
+    }
+
     if (results.length === 0) {
-        searchResults.innerHTML = '<p class="muted-text">No movies found.</p>';
+        searchResults.innerHTML += '<p class="muted-text">No movies found.</p>';
         return;
     }
     results.forEach(movie => {
@@ -438,11 +485,34 @@ searchInput.addEventListener('input', () => {
     searchTimeout = setTimeout(() => socket.emit('search-movies', { query }), 400);
 });
 
-socket.on('search-results', (results) => displayMovies(results));
+socket.on('search-results', (results) => {
+    const query = searchInput.value.trim();
+
+    // If TMDB found results, show them and grow the pool
+    if (results.length > 0) {
+        addMoviesToPool(results);
+        displayMovies(results);
+        return;
+    }
+
+    // No TMDB results — try fuzzy fallback
+    if (query.length >= 3) {
+        const fuzzyResults = fuzzySearch(query);
+        if (fuzzyResults.length > 0) {
+            displayMovies(fuzzyResults, {
+                fuzzyMessage: `🔍 No exact match for "${query}". Did you mean:`
+            });
+            return;
+        }
+    }
+
+    displayMovies([]);
+});
 
 socket.on('browse-results', ({ category, genreId, results }) => {
     if (results.length > 0) {
         browseCache.set(cacheKey(category, genreId), results);
+        addMoviesToPool(results);
     }
     if (category === currentCategory && genreId === (currentGenreId || '')) {
         displayMovies(results);
@@ -481,6 +551,10 @@ document.getElementById('genre-select').addEventListener('change', (e) => {
 // ============================================
 socket.on('wishlist-updated', (wishlist) => {
     currentWishlist = wishlist;
+    addMoviesToPool(wishlist.map(w => ({
+        id: w.tmdbId, title: w.title, year: w.year,
+        poster: w.poster, rating: w.rating, overview: w.overview
+    })));
     renderWishlist(wishlist);
     updatePollEmptyState();
 });
@@ -604,7 +678,6 @@ promoteConfirmBtn.addEventListener('click', () => {
             tmdbId: promotingMovie.tmdbId
         }
     });
-
     socket.emit('remove-from-wishlist', { roomCode: currentRoomCode, movieId: promotingMovie.id });
 
     promoteModal.classList.add('hidden');
@@ -1098,7 +1171,7 @@ function renderPollResults(results) {
 }
 
 // ============================================
-// LEAVE ROOM (clears session)
+// LEAVE ROOM
 // ============================================
 document.getElementById('leave-btn').addEventListener('click', () => {
     clearSession();

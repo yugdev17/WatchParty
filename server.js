@@ -38,15 +38,16 @@ function httpsGet(url) {
 
 const rooms = {};
 let cachedGenres = null;
+let cachedSearchPool = null;
 
 // ============ CACHES ============
-const TRAILER_TTL = 30 * 60 * 1000;  // 30 min
-const BROWSE_TTL  = 5 * 60 * 1000;   // 5 min
-const SEARCH_TTL  = 5 * 60 * 1000;   // 5 min
+const TRAILER_TTL = 30 * 60 * 1000;
+const BROWSE_TTL  = 5 * 60 * 1000;
+const SEARCH_TTL  = 5 * 60 * 1000;
 
-const trailerCache = new Map();   // tmdbId → { title, key } | 'pending'
-const browseCache  = new Map();   // "category|genreId" → { results, ts }
-const searchCache  = new Map();   // "query-lowercased" → { results, ts }
+const trailerCache = new Map();
+const browseCache  = new Map();
+const searchCache  = new Map();
 
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
@@ -179,12 +180,11 @@ io.on('connection', (socket) => {
         }, 800);
     });
 
-    // --- MOVIE SEARCH (with cache) ---
+    // --- MOVIE SEARCH ---
     socket.on('search-movies', async ({ query }) => {
         if (!query || query.length < 2) return;
         const cacheKey = query.toLowerCase().trim();
 
-        // Serve from cache
         const cached = searchCache.get(cacheKey);
         if (cached && Date.now() - cached.ts < SEARCH_TTL) {
             socket.emit('search-results', cached.results);
@@ -211,7 +211,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- BROWSE MOVIES (with cache) ---
+    // --- BROWSE MOVIES ---
     socket.on('browse-movies', async ({ category, genreId }) => {
         const cacheKey = `${category}|${genreId || ''}`;
 
@@ -266,6 +266,35 @@ io.on('connection', (socket) => {
         } catch (error) {
             console.log('❌ Genres error:', error.message);
             socket.emit('genres-list', []);
+        }
+    });
+
+    // --- SEARCH POOL (for fuzzy fallback) ---
+    socket.on('get-search-pool', async () => {
+        if (cachedSearchPool) {
+            socket.emit('search-pool', cachedSearchPool);
+            return;
+        }
+        try {
+            const allMovies = [];
+            for (const page of [1, 2, 3]) {
+                const url = `${TMDB_BASE_URL}/movie/popular?api_key=${TMDB_API_KEY}&page=${page}`;
+                const data = await httpsGet(url);
+                allMovies.push(...data.results.map(m => ({
+                    id: m.id,
+                    title: m.title,
+                    year: m.release_date ? m.release_date.split('-')[0] : 'N/A',
+                    poster: m.poster_path ? `https://image.tmdb.org/t/p/w200${m.poster_path}` : null,
+                    rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : 0,
+                    overview: m.overview || 'No description available.'
+                })));
+            }
+            cachedSearchPool = allMovies;
+            console.log('✅ Search pool loaded:', allMovies.length, 'movies');
+            socket.emit('search-pool', allMovies);
+        } catch (error) {
+            console.log('❌ Search pool error:', error.message);
+            socket.emit('search-pool', []);
         }
     });
 
@@ -339,11 +368,10 @@ io.on('connection', (socket) => {
         }, 800);
     });
 
-    // --- PLAY TRAILER (with cache + pending lock) ---
+    // --- PLAY TRAILER ---
     socket.on('play-trailer', async ({ roomCode, tmdbId, title }) => {
         if (!rooms[roomCode]) return;
 
-        // Serve from cache immediately
         const cached = trailerCache.get(tmdbId);
         if (cached && cached !== 'pending') {
             rooms[roomCode].trailerState = { isOpen: true, title: cached.title, key: cached.key };
@@ -351,13 +379,11 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // Already fetching — ignore duplicate clicks
         if (cached === 'pending') {
             console.log('⏳ Trailer already fetching, ignoring duplicate click');
             return;
         }
 
-        // Mark as pending
         trailerCache.set(tmdbId, 'pending');
 
         try {
