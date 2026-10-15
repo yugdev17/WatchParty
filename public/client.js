@@ -33,6 +33,18 @@ const copyInviteBtn = document.getElementById('copy-invite-btn');
 const inviteBanner = document.getElementById('invite-banner');
 const inviteRoomCode = document.getElementById('invite-room-code');
 
+// Custom video controls
+const videoContainer = document.querySelector('.video-container');
+const playPauseBtn = document.getElementById('play-pause-btn');
+const rewindBtn = document.getElementById('rewind-btn');
+const forwardBtn = document.getElementById('forward-btn');
+const muteBtn = document.getElementById('mute-btn');
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+const progressBar = document.getElementById('progress-bar');
+const progressFill = document.getElementById('progress-fill');
+const currentTimeEl = document.getElementById('current-time');
+const durationTimeEl = document.getElementById('duration-time');
+
 const usersChip = document.getElementById('users-chip');
 const usersDropdown = document.getElementById('users-dropdown');
 const usersCount = document.getElementById('users-count');
@@ -89,14 +101,14 @@ let pollCountdownInterval = null;
 let promotingMovie = null;
 let activeTab = 'chat';
 let hasConnectedOnce = false;
+let isSeekingFromClick = false;
 
-// Fuzzy search pool
-let moviePool = [];      // grows as we see movies
-let fuse = null;         // Fuse.js instance
+let moviePool = [];
+let fuse = null;
 let poolRequested = false;
 
 // ============================================
-// SESSION STORAGE (reconnection)
+// SESSION STORAGE
 // ============================================
 const SESSION_KEY = 'watchparty_session';
 
@@ -121,9 +133,7 @@ function loadSession() {
             return null;
         }
         return data;
-    } catch (e) {
-        return null;
-    }
+    } catch (e) { return null; }
 }
 
 function clearSession() {
@@ -157,13 +167,160 @@ function hideToast() {
 }
 
 // ============================================
+// CUSTOM VIDEO CONTROLS
+// ============================================
+function formatTime(seconds) {
+    if (!isFinite(seconds) || seconds < 0) return '00:00';
+    const s = Math.floor(seconds);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    if (h > 0) {
+        return `${h}:${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+    }
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+}
+
+function updatePlayPauseIcon() {
+    const playIcon = document.getElementById('icon-play');
+    const pauseIcon = document.getElementById('icon-pause');
+    if (!playIcon || !pauseIcon) return;
+    if (videoPlayer.paused) {
+        playIcon.classList.remove('hidden');
+        pauseIcon.classList.add('hidden');
+        playPauseBtn.setAttribute('aria-label', 'Play');
+    } else {
+        playIcon.classList.add('hidden');
+        pauseIcon.classList.remove('hidden');
+        playPauseBtn.setAttribute('aria-label', 'Pause');
+    }
+}
+
+function updateVolumeIcon() {
+    const volumeIcon = document.getElementById('icon-volume');
+    const mutedIcon = document.getElementById('icon-muted');
+    if (!volumeIcon || !mutedIcon) return;
+    if (videoPlayer.muted) {
+        volumeIcon.classList.add('hidden');
+        mutedIcon.classList.remove('hidden');
+        muteBtn.classList.add('muted');
+    } else {
+        volumeIcon.classList.remove('hidden');
+        mutedIcon.classList.add('hidden');
+        muteBtn.classList.remove('muted');
+    }
+}
+
+function updateProgressUI() {
+    if (!videoPlayer.duration || isSeekingFromClick) return;
+    const pct = (videoPlayer.currentTime / videoPlayer.duration) * 100;
+    progressFill.style.width = pct + '%';
+    currentTimeEl.textContent = formatTime(videoPlayer.currentTime);
+}
+
+function showControlsBriefly() {
+    videoContainer.classList.add('controls-active');
+    clearTimeout(showControlsBriefly._t);
+    showControlsBriefly._t = setTimeout(() => {
+        videoContainer.classList.remove('controls-active');
+    }, 1800);
+}
+
+// Play/pause toggle
+playPauseBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (videoPlayer.paused) videoPlayer.play();
+    else videoPlayer.pause();
+    showControlsBriefly();
+});
+
+// Rewind 10s
+rewindBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const newTime = Math.max(0, videoPlayer.currentTime - 10);
+    videoPlayer.currentTime = newTime;
+    socket.emit('seek-video', { roomCode: currentRoomCode, currentTime: newTime });
+    showControlsBriefly();
+});
+
+// Forward 10s
+forwardBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const newTime = Math.min(videoPlayer.duration || 0, videoPlayer.currentTime + 10);
+    videoPlayer.currentTime = newTime;
+    socket.emit('seek-video', { roomCode: currentRoomCode, currentTime: newTime });
+    showControlsBriefly();
+});
+
+// Progress bar click to seek
+progressBar.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!videoPlayer.duration) return;
+    const rect = progressBar.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const newTime = pct * videoPlayer.duration;
+    isSeekingFromClick = true;
+    videoPlayer.currentTime = newTime;
+    progressFill.style.width = (pct * 100) + '%';
+    currentTimeEl.textContent = formatTime(newTime);
+    socket.emit('seek-video', { roomCode: currentRoomCode, currentTime: newTime });
+    setTimeout(() => { isSeekingFromClick = false; }, 300);
+});
+
+// Mute toggle
+muteBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    videoPlayer.muted = !videoPlayer.muted;
+});
+
+// Fullscreen toggle
+fullscreenBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const container = videoContainer;
+    if (!document.fullscreenElement) {
+        if (container.requestFullscreen) container.requestFullscreen();
+        else if (container.webkitRequestFullscreen) container.webkitRequestFullscreen();
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+});
+
+// Click on video toggles play/pause
+videoContainer.addEventListener('click', (e) => {
+    if (e.target.closest('.custom-video-controls')) return;
+    if (videoPlayer.paused) videoPlayer.play();
+    else videoPlayer.pause();
+});
+
+// Video events
+videoPlayer.addEventListener('loadedmetadata', () => {
+    durationTimeEl.textContent = formatTime(videoPlayer.duration);
+    updateProgressUI();
+});
+
+videoPlayer.addEventListener('timeupdate', updateProgressUI);
+
+videoPlayer.addEventListener('play', () => {
+    updatePlayPauseIcon();
+    showControlsBriefly();
+});
+
+videoPlayer.addEventListener('pause', () => {
+    updatePlayPauseIcon();
+    showControlsBriefly();
+});
+
+videoPlayer.addEventListener('volumechange', updateVolumeIcon);
+
+// ============================================
 // FUZZY SEARCH POOL
 // ============================================
 function rebuildFuse() {
     if (typeof Fuse === 'undefined') return;
     fuse = new Fuse(moviePool, {
         keys: ['title'],
-        threshold: 0.4,          // 0 = exact, 1 = match anything
+        threshold: 0.4,
         distance: 100,
         includeScore: true,
         minMatchCharLength: 3
@@ -189,14 +346,13 @@ function addMoviesToPool(movies) {
 function fuzzySearch(query) {
     if (!fuse || !query) return [];
     const results = fuse.search(query.trim(), { limit: 10 });
-    // Only keep decent matches (score < 0.55 = better match)
     return results
         .filter(r => r.score < 0.55)
         .map(r => r.item);
 }
 
 // ============================================
-// SOCKET CONNECTION (reconnection)
+// SOCKET CONNECTION
 // ============================================
 socket.on('connect', () => {
     if (hasConnectedOnce) {
@@ -246,7 +402,7 @@ socket.on('disconnect', (reason) => {
 })();
 
 // ============================================
-// AUTO-RESUME ON PAGE LOAD
+// AUTO-RESUME
 // ============================================
 (function tryAutoResume() {
     if (invitedRoomCode) return;
@@ -309,6 +465,8 @@ socket.on('room-created', (roomCode) => {
     socket.emit('browse-movies', { category: 'trending', genreId: '' });
     requestPoolOnce();
     saveSession();
+    updatePlayPauseIcon();
+    updateVolumeIcon();
 });
 
 socket.on('room-joined', (roomCode) => {
@@ -320,6 +478,8 @@ socket.on('room-joined', (roomCode) => {
     socket.emit('browse-movies', { category: 'trending', genreId: '' });
     requestPoolOnce();
     saveSession();
+    updatePlayPauseIcon();
+    updateVolumeIcon();
     if (wasReconnect) {
         showToast('Reconnected', 'success', 2000);
     }
@@ -415,7 +575,7 @@ copyInviteBtn.addEventListener('click', () => {
 });
 
 // ============================================
-// MOVIE DISCOVERY (Search + Browse + Fuzzy)
+// MOVIE DISCOVERY
 // ============================================
 function displayMovies(results, opts = {}) {
     searchResults.innerHTML = '';
@@ -487,15 +647,11 @@ searchInput.addEventListener('input', () => {
 
 socket.on('search-results', (results) => {
     const query = searchInput.value.trim();
-
-    // If TMDB found results, show them and grow the pool
     if (results.length > 0) {
         addMoviesToPool(results);
         displayMovies(results);
         return;
     }
-
-    // No TMDB results — try fuzzy fallback
     if (query.length >= 3) {
         const fuzzyResults = fuzzySearch(query);
         if (fuzzyResults.length > 0) {
@@ -505,7 +661,6 @@ socket.on('search-results', (results) => {
             return;
         }
     }
-
     displayMovies([]);
 });
 
@@ -835,7 +990,7 @@ socket.on('emoji-reaction', ({ emoji, username }) => {
 });
 
 // ============================================
-// VIDEO PLAYER SYNC
+// VIDEO SYNC
 // ============================================
 loadVideoBtn.addEventListener('click', () => {
     const url = videoUrlInput.value.trim();

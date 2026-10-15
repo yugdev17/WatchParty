@@ -16,10 +16,10 @@ const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
 
 console.log('🔑 API Key loaded, length:', TMDB_API_KEY.length);
 
-// Reliable HTTPS GET helper
-function httpsGet(url) {
+// Base HTTPS GET (single attempt)
+function httpsGetOnce(url) {
     return new Promise((resolve, reject) => {
-        const req = https.get(url, { family: 4, timeout: 10000 }, (res) => {
+        const req = https.get(url, { family: 4, timeout: 15000 }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
             res.on('end', () => {
@@ -34,6 +34,25 @@ function httpsGet(url) {
         req.on('error', reject);
         req.on('timeout', () => req.destroy(new Error('Request timed out')));
     });
+}
+
+// HTTPS GET with retries (handles ECONNRESET, timeouts, transient errors)
+async function httpsGet(url, retries = 3) {
+    let lastError;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            return await httpsGetOnce(url);
+        } catch (error) {
+            lastError = error;
+            const isTransient = /ECONNRESET|ETIMEDOUT|ENOTFOUND|EAI_AGAIN|socket hang up|timed out/i.test(error.message);
+            if (!isTransient || attempt === retries) {
+                throw error;
+            }
+            console.log(`⚠️  Attempt ${attempt} failed (${error.message}), retrying…`);
+            await new Promise(r => setTimeout(r, 300 * attempt)); // backoff: 300ms, 600ms
+        }
+    }
+    throw lastError;
 }
 
 const rooms = {};
@@ -269,7 +288,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- SEARCH POOL (for fuzzy fallback) ---
+    // --- SEARCH POOL ---
     socket.on('get-search-pool', async () => {
         if (cachedSearchPool) {
             socket.emit('search-pool', cachedSearchPool);
@@ -368,7 +387,7 @@ io.on('connection', (socket) => {
         }, 800);
     });
 
-    // --- PLAY TRAILER ---
+    // --- PLAY TRAILER (with retry + robust cache) ---
     socket.on('play-trailer', async ({ roomCode, tmdbId, title }) => {
         if (!rooms[roomCode]) return;
 
