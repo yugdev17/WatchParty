@@ -8,13 +8,10 @@
 </head>
 <body>
 
-    <!-- SCREEN 1: Username + Choice -->
+    <!-- ============ LOBBY SCREEN ============ -->
     <div id="screen-lobby" class="screen">
         <div class="lobby-card">
-            <div class="brand">
-                <span class="brand-icon">🎬</span>
-                <span class="brand-name">Watch Party</span>
-            </div>
+            <img src="Logo.png" alt="WatchParty" class="lobby-logo">
 
             <div id="invite-banner" class="invite-banner hidden">
                 ✨ You've been invited to join <strong id="invite-room-code"></strong>
@@ -40,62 +37,85 @@
         </div>
     </div>
 
-    <!-- SCREEN 2: Room -->
+    <!-- ============ ROOM SCREEN ============ -->
     <div id="room-view" class="room-layout hidden">
-        <header class="room-header">
-            <div class="header-left">
-                <span class="brand-icon small">🎬</span>
+
+        <!-- ===== Top Header (2 columns matching body) ===== -->
+        <div class="header-row">
+            <!-- Left column: logo + room + invite -->
+            <div class="header-left-col">
+                <img src="Logo.png" alt="WatchParty" class="header-logo">
                 <span class="room-code-label">Room</span>
                 <span id="display-room-code" class="room-code"></span>
-                <button id="copy-invite-btn" class="icon-btn" title="Copy Invite Link">🔗</button>
-                <button id="poll-header-btn" class="icon-btn" title="Start a Poll">🗳️</button>
+                <button id="copy-invite-btn" class="btn-invite" title="Copy invite link">
+                    🔗 Invite Friends
+                </button>
             </div>
-            <div class="header-right">
-                <span class="users-label">👥</span>
-                <ul id="user-list" class="header-user-list"></ul>
-            </div>
-        </header>
 
+            <!-- Right column: two rows -->
+            <div class="header-right-col">
+                <!-- Row 1: users chip + leave -->
+                <div class="header-right-top">
+                    <div class="users-chip" id="users-chip">
+                        <span class="users-icon">👥</span>
+                        <span class="users-count" id="users-count">1</span>
+                        <div class="users-dropdown hidden" id="users-dropdown">
+                            <div class="users-dropdown-title">In this room</div>
+                            <ul id="user-list" class="users-dropdown-list"></ul>
+                        </div>
+                    </div>
+                    <button id="leave-btn" class="btn-leave">Leave</button>
+                </div>
+
+                <!-- Row 2: tabs -->
+                <div class="header-right-bottom">
+                    <nav class="tab-bar">
+                        <button class="panel-tab active" data-tab="chat">💬 Chat</button>
+                        <button class="panel-tab" data-tab="search">🔍 Movies</button>
+                        <button class="panel-tab" data-tab="polls">📊 Polls</button>
+                        <button class="panel-tab" data-tab="playlist">▶ Playlist</button>
+                        <button class="panel-tab" data-tab="wishlist">⭐ Wish List</button>
+                    </nav>
+                </div>
+            </div>
+        </div>
+
+        <!-- ===== Body: video + side panel ===== -->
         <div class="room-body">
+
+            <!-- Video column -->
             <div class="video-area">
                 <video id="video-player" controls>Your browser does not support HTML5 video.</video>
-                
-                <!-- Emoji bar below video -->
-                <div class="emoji-bar" id="emoji-bar">
-                    <button class="emoji-btn" data-emoji="❤️">❤️</button>
-                    <button class="emoji-btn" data-emoji="😂">😂</button>
-                    <button class="emoji-btn" data-emoji="😮">😮</button>
-                    <button class="emoji-btn" data-emoji="🔥">🔥</button>
-                    <button class="emoji-btn" data-emoji="👍">👍</button>
-                    <button class="emoji-btn" data-emoji="😢">😢</button>
-                </div>
-
                 <div class="video-input-row">
-                    <input type="text" id="video-url-input" class="input-field" placeholder="Paste a direct video URL (.mp4)">
+                    <input type="text" id="video-url-input" class="input-field" placeholder="Or paste a direct video URL (.mp4)">
                     <button id="load-video-btn" class="btn btn-primary small">Load</button>
                 </div>
-
-                <button id="leave-btn" class="btn btn-danger small full-width">Leave Room</button>
             </div>
 
+            <!-- Side panel -->
             <aside class="side-panel">
-                <div class="panel-tabs">
-                    <button class="panel-tab active" data-tab="chat">💬 Chat</button>
-                    <button class="panel-tab" data-tab="search">🔍 Movies</button>
-                    <button class="panel-tab" data-tab="wishlist">📝 Wishlist</button>
-                    <button class="panel-tab" data-tab="playlist">▶ Playlist</button>
-                </div>
 
                 <!-- Chat Tab -->
                 <div class="panel-content active" id="tab-chat">
                     <div class="chat-messages" id="chat-messages"></div>
+
+                    <!-- Emoji bar above input -->
+                    <div class="emoji-bar" id="emoji-bar">
+                        <button class="emoji-btn" data-emoji="❤️">❤️</button>
+                        <button class="emoji-btn" data-emoji="😂">😂</button>
+                        <button class="emoji-btn" data-emoji="😮">😮</button>
+                        <button class="emoji-btn" data-emoji="🔥">🔥</button>
+                        <button class="emoji-btn" data-emoji="👍">👍</button>
+                        <button class="emoji-btn" data-emoji="😢">😢</button>
+                    </div>
+
                     <div class="chat-input-area">
                         <input type="text" id="chat-input" class="input-field" placeholder="Type a message...">
                         <button id="send-chat-btn" class="btn btn-primary small">➤</button>
                     </div>
                 </div>
 
-                <!-- Search Tab -->
+                <!-- Movies / Search Tab -->
                 <div class="panel-content" id="tab-search">
                     <div class="search-input-area">
                         <input type="text" id="search-input" class="input-field" placeholder="Search movies...">
@@ -116,33 +136,65 @@
                     </div>
                 </div>
 
-                <!-- Wishlist Tab -->
-                <div class="panel-content" id="tab-wishlist">
-                    <div class="wishlist-items" id="wishlist-items">
-                        <p class="muted-text">No movies in the wishlist yet. Add from the Movies tab!</p>
+                <!-- Polls Tab (inline) -->
+                <div class="panel-content" id="tab-polls">
+                    <div id="poll-voting-view">
+                        <div id="poll-empty">
+                            <p class="muted-text" id="poll-empty-msg">No active poll.</p>
+                            <button id="start-poll-btn" class="btn btn-primary full-width hidden">📊 Start a Poll</button>
+                        </div>
+
+                        <div id="poll-active" class="hidden">
+                            <div class="poll-top-bar">
+                                <span class="poll-timer">⏱ <span id="poll-countdown">1:00</span></span>
+                                <span class="poll-votes-info">You have <strong id="poll-votes-left">2</strong> votes</span>
+                                <button id="poll-reset-btn" class="icon-btn small">Reset</button>
+                            </div>
+                            <div id="poll-voted-status" class="poll-voted-status"></div>
+                            <div id="poll-modal-options" class="poll-options"></div>
+                            <div id="poll-declare-row" class="hidden">
+                                <button id="poll-declare-btn" class="btn btn-primary full-width">🏁 Declare Results</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="poll-results-view" class="hidden">
+                        <div id="poll-winner-display" class="poll-winner-display"></div>
+                        <button id="poll-done-btn" class="btn btn-secondary full-width" style="margin-top: 14px;">Done</button>
                     </div>
                 </div>
 
                 <!-- Playlist Tab -->
                 <div class="panel-content" id="tab-playlist">
                     <div class="playlist-items" id="playlist-items">
-                        <p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL below!</p>
+                        <p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL.</p>
                     </div>
                 </div>
+
+                <!-- Wish List Tab -->
+                <div class="panel-content" id="tab-wishlist">
+                    <div class="wishlist-items" id="wishlist-items">
+                        <p class="muted-text">No movies in the wishlist yet. Add from the Movies tab!</p>
+                    </div>
+                </div>
+
             </aside>
         </div>
 
+        <!-- Emoji float overlay -->
         <div class="reaction-overlay" id="reaction-overlay"></div>
     </div>
 
-    <!-- Promote Modal (Wishlist → Playlist) -->
+    <!-- ============ MODALS ============ -->
+
+    <!-- Promote modal (wishlist → playlist) -->
     <div id="promote-modal" class="modal hidden">
         <div class="modal-content promote-modal-content">
             <div class="modal-header">
                 <h3 id="promote-title">Add to Playlist</h3>
                 <button id="promote-close-btn" class="icon-btn">✕</button>
             </div>
-            <p class="muted-text" style="text-align: left; padding: 0 0 10px;">Paste a direct video URL (.mp4) to add this movie to the playlist:</p>
+            <p class="muted-text" style="text-align:left;padding:0 0 10px;">Paste a direct video URL (.mp4) for this movie:</p>
             <input type="text" id="promote-url-input" class="input-field" placeholder="https://...">
             <div class="lobby-actions" style="margin-top: 16px;">
                 <button id="promote-cancel-btn" class="btn btn-secondary">Cancel</button>
@@ -151,37 +203,7 @@
         </div>
     </div>
 
-    <!-- Poll Modal -->
-    <div id="poll-modal" class="modal hidden">
-        <div class="modal-content poll-modal-content">
-            <div class="modal-header">
-                <h3>🗳️ Poll</h3>
-                <button id="poll-modal-close-btn" class="icon-btn">✕</button>
-            </div>
-
-            <!-- Voting view -->
-            <div id="poll-voting-view">
-                <div class="poll-top-bar">
-                    <span class="poll-timer">⏱ <span id="poll-countdown">1:00</span></span>
-                    <span class="poll-votes-info">You have <strong id="poll-votes-left">2</strong> votes</span>
-                    <button id="poll-reset-btn" class="icon-btn small">Reset</button>
-                </div>
-                <div id="poll-voted-status" class="poll-voted-status"></div>
-                <div id="poll-modal-options" class="poll-options"></div>
-                <div id="poll-declare-row" class="hidden">
-                    <button id="poll-declare-btn" class="btn btn-primary full-width">🏁 Declare Results</button>
-                </div>
-            </div>
-
-            <!-- Results view -->
-            <div id="poll-results-view" class="hidden">
-                <div id="poll-winner-display" class="poll-winner-display"></div>
-                <button id="poll-done-btn" class="btn btn-secondary full-width" style="margin-top: 14px;">Done</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Trailer Modal -->
+    <!-- Trailer modal -->
     <div id="trailer-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">

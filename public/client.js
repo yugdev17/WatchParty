@@ -1,5 +1,5 @@
 // ============================================
-// WATCH PARTY - Client Logic
+// WATCH PARTY — Client Logic
 // ============================================
 
 const socket = io();
@@ -33,6 +33,11 @@ const copyInviteBtn = document.getElementById('copy-invite-btn');
 const inviteBanner = document.getElementById('invite-banner');
 const inviteRoomCode = document.getElementById('invite-room-code');
 
+// Users chip + dropdown
+const usersChip = document.getElementById('users-chip');
+const usersDropdown = document.getElementById('users-dropdown');
+const usersCount = document.getElementById('users-count');
+
 // Promote modal
 const promoteModal = document.getElementById('promote-modal');
 const promoteCloseBtn = document.getElementById('promote-close-btn');
@@ -42,9 +47,10 @@ const promoteCancelBtn = document.getElementById('promote-cancel-btn');
 const promoteConfirmBtn = document.getElementById('promote-confirm-btn');
 
 // Poll elements
-const pollHeaderBtn = document.getElementById('poll-header-btn');
-const pollModal = document.getElementById('poll-modal');
-const pollModalCloseBtn = document.getElementById('poll-modal-close-btn');
+const startPollBtn = document.getElementById('start-poll-btn');
+const pollEmpty = document.getElementById('poll-empty');
+const pollEmptyMsg = document.getElementById('poll-empty-msg');
+const pollActive = document.getElementById('poll-active');
 const pollVotingView = document.getElementById('poll-voting-view');
 const pollResultsView = document.getElementById('poll-results-view');
 const pollCountdown = document.getElementById('poll-countdown');
@@ -52,7 +58,6 @@ const pollVotesLeft = document.getElementById('poll-votes-left');
 const pollResetBtn = document.getElementById('poll-reset-btn');
 const pollModalOptions = document.getElementById('poll-modal-options');
 const pollWinnerDisplay = document.getElementById('poll-winner-display');
-const pollFinalOptions = document.getElementById('poll-final-options');
 const pollDoneBtn = document.getElementById('poll-done-btn');
 const pollVotedStatus = document.getElementById('poll-voted-status');
 const pollDeclareRow = document.getElementById('poll-declare-row');
@@ -82,6 +87,7 @@ let currentPoll = null;
 let currentPollResults = null;
 let pollCountdownInterval = null;
 let promotingMovie = null;
+let activeTab = 'chat';
 
 // ============================================
 // INVITE LINK DETECTION
@@ -157,9 +163,9 @@ socket.on('room-joined', (roomCode) => {
 
 socket.on('is-host', (status) => {
     isHost = status;
-    // Refresh playlist and wishlist so host-only buttons appear/disappear
     if (currentWishlist.length) renderWishlist(currentWishlist);
     if (currentPlaylist.length) renderPlaylist(currentPlaylist);
+    updatePollEmptyState();
 });
 
 socket.on('user-list', (users) => {
@@ -169,6 +175,7 @@ socket.on('user-list', (users) => {
         li.textContent = user.name;
         userList.appendChild(li);
     });
+    if (usersCount) usersCount.textContent = users.length;
 });
 
 socket.on('error-message', (msg) => {
@@ -185,17 +192,38 @@ function showRoomView(roomCode) {
 }
 
 // ============================================
+// USERS DROPDOWN
+// ============================================
+if (usersChip) {
+    usersChip.addEventListener('click', (e) => {
+        // Ignore clicks on the dropdown itself
+        if (e.target.closest('#users-dropdown')) return;
+        e.stopPropagation();
+        usersDropdown.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!usersChip.contains(e.target)) {
+            usersDropdown.classList.add('hidden');
+        }
+    });
+}
+
+// ============================================
 // COPY INVITE LINK
 // ============================================
 copyInviteBtn.addEventListener('click', () => {
     const inviteUrl = `${window.location.origin}?room=${currentRoomCode}`;
 
     navigator.clipboard.writeText(inviteUrl).then(() => {
-        copyInviteBtn.textContent = '✅';
-        copyInviteBtn.style.backgroundColor = '#4CAF50';
+        const original = copyInviteBtn.innerHTML;
+        copyInviteBtn.innerHTML = '✅ Copied!';
+        copyInviteBtn.style.background = 'rgba(76, 175, 80, 0.25)';
+        copyInviteBtn.style.borderColor = '#4CAF50';
         setTimeout(() => {
-            copyInviteBtn.textContent = '🔗';
-            copyInviteBtn.style.backgroundColor = '';
+            copyInviteBtn.innerHTML = original;
+            copyInviteBtn.style.background = '';
+            copyInviteBtn.style.borderColor = '';
         }, 2000);
     }).catch(() => {
         prompt('Copy this link:', inviteUrl);
@@ -220,7 +248,7 @@ function displayMovies(results) {
                 <h4>${movie.title} <span style="color:#888;font-weight:normal;">(${movie.year})</span></h4>
                 <p>${movie.overview}</p>
             </div>
-            <button class="add-btn">+ Wish</button>
+            <button class="add-btn">+ Add</button>
         `;
 
         div.addEventListener('click', () => {
@@ -307,11 +335,12 @@ document.getElementById('genre-select').addEventListener('change', (e) => {
 });
 
 // ============================================
-// WISHLIST (TMDB movies)
+// WISHLIST
 // ============================================
 socket.on('wishlist-updated', (wishlist) => {
     currentWishlist = wishlist;
     renderWishlist(wishlist);
+    updatePollEmptyState();
 });
 
 function renderWishlist(wishlist) {
@@ -330,7 +359,7 @@ function renderWishlist(wishlist) {
                 <span>${movie.year}${movie.rating ? ' · ⭐ ' + movie.rating : ''}</span>
             </div>
             <div class="playlist-item-actions">
-                <button class="trailer-btn" style="background-color: #e50914;">▶ Trailer</button>
+                <button class="trailer-btn" style="background-color: var(--gold); color: #0d0d12;">▶ Trailer</button>
                 ${isHost ? `<button class="promote-btn" style="background-color: #2196F3;">→ Playlist</button>` : ''}
                 <button class="remove-btn" style="background-color: #3a3a44;">✕</button>
             </div>
@@ -355,7 +384,7 @@ function renderWishlist(wishlist) {
 }
 
 // ============================================
-// PLAYLIST (real videos with URLs)
+// PLAYLIST
 // ============================================
 socket.on('playlist-updated', (playlist) => {
     currentPlaylist = playlist;
@@ -365,7 +394,7 @@ socket.on('playlist-updated', (playlist) => {
 function renderPlaylist(playlist) {
     playlistItems.innerHTML = '';
     if (playlist.length === 0) {
-        playlistItems.innerHTML = '<p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL below!</p>';
+        playlistItems.innerHTML = '<p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL.</p>';
         return;
     }
     playlist.forEach((item, index) => {
@@ -379,7 +408,7 @@ function renderPlaylist(playlist) {
                 <span>${item.url.substring(0, 30)}…</span>
             </div>
             <div class="playlist-item-actions">
-                <button class="play-btn" style="background-color: #4CAF50;">▶ Play</button>
+                <button class="play-btn" style="background-color: var(--success);">▶ Play</button>
                 ${isHost ? `<button class="remove-btn" style="background-color: #3a3a44;">✕</button>` : ''}
             </div>
         `;
@@ -399,7 +428,7 @@ function renderPlaylist(playlist) {
 }
 
 // ============================================
-// PROMOTE MODAL (wishlist → playlist)
+// PROMOTE MODAL
 // ============================================
 function openPromoteModal(movie) {
     promotingMovie = movie;
@@ -434,20 +463,14 @@ promoteConfirmBtn.addEventListener('click', () => {
         }
     });
 
-    // Auto-remove from wishlist after promoting
     socket.emit('remove-from-wishlist', { roomCode: currentRoomCode, movieId: promotingMovie.id });
 
     promoteModal.classList.add('hidden');
     promotingMovie = null;
 
-    // Switch to playlist tab to show result
-    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
-    document.querySelector('[data-tab="playlist"]').classList.add('active');
-    document.getElementById('tab-playlist').classList.add('active');
+    switchTab('playlist');
 });
 
-// Allow Enter key
 promoteUrlInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') promoteConfirmBtn.click();
 });
@@ -481,10 +504,7 @@ window.buildYtPlayer = function(videoKey) {
     setTimeout(() => {
         ytPlayer = new YT.Player('trailer-frame', {
             videoId: videoKey,
-            playerVars: {
-                autoplay: 1,
-                enablejsapi: 1
-            },
+            playerVars: { autoplay: 1, enablejsapi: 1 },
             events: {
                 'onReady': (event) => {
                     event.target.playVideo();
@@ -503,17 +523,9 @@ window.buildYtPlayer = function(videoKey) {
 function onYtStateChange(event) {
     if (isRemoteTrailerAction) return;
     if (event.data === 1) {
-        socket.emit('trailer-state-change', {
-            roomCode: currentRoomCode,
-            isPlaying: true,
-            currentTime: ytPlayer.getCurrentTime()
-        });
+        socket.emit('trailer-state-change', { roomCode: currentRoomCode, isPlaying: true, currentTime: ytPlayer.getCurrentTime() });
     } else if (event.data === 2) {
-        socket.emit('trailer-state-change', {
-            roomCode: currentRoomCode,
-            isPlaying: false,
-            currentTime: ytPlayer.getCurrentTime()
-        });
+        socket.emit('trailer-state-change', { roomCode: currentRoomCode, isPlaying: false, currentTime: ytPlayer.getCurrentTime() });
     }
 }
 
@@ -652,7 +664,6 @@ videoPlayer.addEventListener('seeked', () => {
     socket.emit('seek-video', { roomCode: currentRoomCode, currentTime: videoPlayer.currentTime });
 });
 
-// 🎬 AUTO-PLAY NEXT: when video ends, the host triggers the advance
 videoPlayer.addEventListener('ended', () => {
     if (isHost && currentRoomCode) {
         socket.emit('video-ended', { roomCode: currentRoomCode });
@@ -697,54 +708,62 @@ socket.on('sync-time', (hostTime) => {
 });
 
 // ============================================
-// SIDE PANEL TABS (4 tabs now)
+// TAB SWITCHING
 // ============================================
+function switchTab(tabName) {
+    activeTab = tabName;
+    document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
+    const tabBtn = document.querySelector(`.panel-tab[data-tab="${tabName}"]`);
+    const tabContent = document.getElementById('tab-' + tabName);
+    if (tabBtn) tabBtn.classList.add('active');
+    if (tabContent) tabContent.classList.add('active');
+}
+
 document.querySelectorAll('.panel-tab').forEach(tab => {
     tab.addEventListener('click', () => {
-        document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.panel-content').forEach(c => c.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+        switchTab(tab.dataset.tab);
     });
 });
 
 // ============================================
-// GROUP POLLS
+// POLLS
 // ============================================
-
-pollHeaderBtn.addEventListener('click', () => {
-    if (currentPollResults) {
-        pollModal.classList.remove('hidden');
-        return;
-    }
-
+function updatePollEmptyState() {
     if (currentPoll && currentPoll.isActive) {
-        renderActivePoll();
-        pollModal.classList.remove('hidden');
+        pollEmpty.classList.add('hidden');
+        pollActive.classList.remove('hidden');
+        startPollBtn.classList.add('hidden');
         return;
     }
 
-    if (!isHost) {
-        alert('Only the host can start a poll. Wait for them to start one!');
+    if (currentPollResults) {
+        pollEmpty.classList.add('hidden');
+        pollActive.classList.add('hidden');
         return;
     }
 
+    pollEmpty.classList.remove('hidden');
+    pollActive.classList.add('hidden');
+
+    if (isHost && currentWishlist.length >= 2) {
+        pollEmptyMsg.textContent = 'Ready to vote? Start a poll with the wishlist!';
+        startPollBtn.classList.remove('hidden');
+    } else if (!isHost) {
+        pollEmptyMsg.textContent = 'Waiting for the host to start a poll…';
+        startPollBtn.classList.add('hidden');
+    } else {
+        pollEmptyMsg.textContent = 'Add at least 2 movies to the wishlist before starting a poll.';
+        startPollBtn.classList.add('hidden');
+    }
+}
+
+startPollBtn.addEventListener('click', () => {
     if (currentWishlist.length < 2) {
         alert('You need at least 2 movies in the wishlist to start a poll.');
         return;
     }
-
     socket.emit('create-poll', { roomCode: currentRoomCode });
-});
-
-pollModalCloseBtn.addEventListener('click', () => {
-    pollModal.classList.add('hidden');
-    if (pollCountdownInterval) clearInterval(pollCountdownInterval);
-});
-
-pollDoneBtn.addEventListener('click', () => {
-    socket.emit('dismiss-poll', { roomCode: currentRoomCode });
-    pollModal.classList.add('hidden');
 });
 
 pollResetBtn.addEventListener('click', () => {
@@ -755,49 +774,51 @@ pollDeclareBtn.addEventListener('click', () => {
     socket.emit('close-poll', { roomCode: currentRoomCode });
 });
 
+pollDoneBtn.addEventListener('click', () => {
+    socket.emit('dismiss-poll', { roomCode: currentRoomCode });
+});
+
 socket.on('poll-updated', (poll) => {
     currentPoll = poll;
     currentPollResults = null;
-    updatePollHeaderBtn(true);
-
-    if (!pollModal.classList.contains('hidden')) {
-        renderActivePoll();
-    }
+    pollVotingView.classList.remove('hidden');
+    pollResultsView.classList.add('hidden');
+    renderActivePoll();
+    updatePollEmptyState();
 });
 
 socket.on('poll-results', (results) => {
     currentPollResults = results;
     currentPoll = null;
     if (pollCountdownInterval) clearInterval(pollCountdownInterval);
-    updatePollHeaderBtn(false);
 
     pollVotingView.classList.add('hidden');
     pollResultsView.classList.remove('hidden');
+    pollEmpty.classList.add('hidden');
+    pollActive.classList.add('hidden');
+
     renderPollResults(results);
-    pollModal.classList.remove('hidden');
+    switchTab('polls');
 });
 
 socket.on('poll-dismissed', () => {
     currentPoll = null;
     currentPollResults = null;
-    pollModal.classList.add('hidden');
     if (pollCountdownInterval) clearInterval(pollCountdownInterval);
-    updatePollHeaderBtn(false);
+    pollVotingView.classList.remove('hidden');
+    pollResultsView.classList.add('hidden');
+    updatePollEmptyState();
 });
 
-function updatePollHeaderBtn(active) {
-    if (active) {
-        pollHeaderBtn.style.background = 'var(--accent)';
-        pollHeaderBtn.style.borderColor = 'var(--accent)';
-    } else {
-        pollHeaderBtn.style.background = '';
-        pollHeaderBtn.style.borderColor = '';
-    }
-}
-
 function renderActivePoll() {
-    if (!currentPoll) return;
+    if (!currentPoll || !currentPoll.isActive) {
+        updatePollEmptyState();
+        return;
+    }
 
+    pollEmpty.classList.add('hidden');
+    pollActive.classList.remove('hidden');
+    startPollBtn.classList.add('hidden');
     pollVotingView.classList.remove('hidden');
     pollResultsView.classList.add('hidden');
 
@@ -896,12 +917,12 @@ function renderPollResults(results) {
     if (isTie) {
         winnerHTML = `
             <div style="font-size: 20px; margin-bottom: 4px;">🤝</div>
-            <div style="color: #ffb74d; font-size: 12px; margin-bottom: 10px;">It's a tie! Breaking by rating…</div>
+            <div style="color: var(--gold); font-size: 12px; margin-bottom: 10px;">It's a tie! Breaking by rating…</div>
             <img src="${winner.poster || 'https://via.placeholder.com/100x150/333/888?text=?'}" class="winner-poster" alt="">
             <div class="winner-title">${winner.title}</div>
             <div class="winner-rating">⭐ ${winner.rating}</div>
             <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
-            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3;">→ Add to Playlist</button>` : ''}
+            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3; color: white;">→ Add to Playlist</button>` : ''}
         `;
     } else {
         winnerHTML = `
@@ -910,7 +931,7 @@ function renderPollResults(results) {
             <div class="winner-title">${winner.title}</div>
             <div class="winner-rating">⭐ ${winner.rating}</div>
             <button id="winner-trailer-btn" class="btn btn-primary" style="margin-top: 16px;">▶ Watch Trailer</button>
-            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3;">→ Add to Playlist</button>` : ''}
+            ${isHost ? `<button id="winner-promote-btn" class="btn btn-primary" style="margin-top: 10px; background: #2196F3; color: white;">→ Add to Playlist</button>` : ''}
         `;
     }
     pollWinnerDisplay.innerHTML = winnerHTML;
@@ -918,7 +939,6 @@ function renderPollResults(results) {
     const trailerBtn = document.getElementById('winner-trailer-btn');
     if (trailerBtn) {
         trailerBtn.addEventListener('click', () => {
-            pollModal.classList.add('hidden');
             socket.emit('play-trailer', { roomCode: currentRoomCode, tmdbId: winner.tmdbId, title: winner.title });
         });
     }
@@ -926,8 +946,6 @@ function renderPollResults(results) {
     const promoteBtn = document.getElementById('winner-promote-btn');
     if (promoteBtn) {
         promoteBtn.addEventListener('click', () => {
-            pollModal.classList.add('hidden');
-            // Find the full wishlist item to keep poster/rating
             const wlItem = currentWishlist.find(w => w.tmdbId === winner.tmdbId) || {
                 title: winner.title,
                 poster: winner.poster,
