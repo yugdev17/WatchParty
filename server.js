@@ -39,6 +39,15 @@ function httpsGet(url) {
 const rooms = {};
 let cachedGenres = null;
 
+// ============ CACHES ============
+const TRAILER_TTL = 30 * 60 * 1000;  // 30 min
+const BROWSE_TTL  = 5 * 60 * 1000;   // 5 min
+const SEARCH_TTL  = 5 * 60 * 1000;   // 5 min
+
+const trailerCache = new Map();   // tmdbId → { title, key } | 'pending'
+const browseCache  = new Map();   // "category|genreId" → { results, ts }
+const searchCache  = new Map();   // "query-lowercased" → { results, ts }
+
 io.on('connection', (socket) => {
     console.log('A user connected:', socket.id);
 
@@ -141,19 +150,17 @@ io.on('connection', (socket) => {
         if (rooms[roomCode]) socket.emit('sync-video-state', rooms[roomCode].videoState);
     });
 
-    // --- 🎬 VIDEO ENDED (auto-play next in playlist) ---
+    // --- VIDEO ENDED ---
     socket.on('video-ended', ({ roomCode }) => {
         const room = rooms[roomCode];
         if (!room) return;
-        // Only the host triggers the advance
         if (socket.id !== room.host) return;
 
         const currentIndex = room.videoState.playlistIndex;
-        if (currentIndex < 0) return; // not playing from playlist
+        if (currentIndex < 0) return;
 
         const nextIndex = currentIndex + 1;
         if (nextIndex >= room.playlist.length) {
-            // No more videos — just stop
             room.videoState.isPlaying = false;
             return;
         }
@@ -167,15 +174,23 @@ io.on('connection', (socket) => {
         };
 
         io.to(roomCode).emit('video-changed', nextVideo.url);
-        // Give clients a moment to load before telling them to play
         setTimeout(() => {
             io.to(roomCode).emit('play-video', 0);
         }, 800);
     });
 
-    // --- MOVIE SEARCH ---
+    // --- MOVIE SEARCH (with cache) ---
     socket.on('search-movies', async ({ query }) => {
         if (!query || query.length < 2) return;
+        const cacheKey = query.toLowerCase().trim();
+
+        // Serve from cache
+        const cached = searchCache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < SEARCH_TTL) {
+            socket.emit('search-results', cached.results);
+            return;
+        }
+
         try {
             const url = `${TMDB_BASE_URL}/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(query)}&include_adult=false`;
             const data = await httpsGet(url);
@@ -187,6 +202,8 @@ io.on('connection', (socket) => {
                 rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : 0,
                 overview: m.overview || 'No description available.'
             }));
+
+            searchCache.set(cacheKey, { results, ts: Date.now() });
             socket.emit('search-results', results);
         } catch (error) {
             console.log('❌ Search error:', error.message);
@@ -194,8 +211,16 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- BROWSE MOVIES ---
+    // --- BROWSE MOVIES (with cache) ---
     socket.on('browse-movies', async ({ category, genreId }) => {
+        const cacheKey = `${category}|${genreId || ''}`;
+
+        const cached = browseCache.get(cacheKey);
+        if (cached && Date.now() - cached.ts < BROWSE_TTL) {
+            socket.emit('browse-results', { category, genreId: genreId || '', results: cached.results });
+            return;
+        }
+
         try {
             let url;
             if (genreId) {
@@ -218,6 +243,8 @@ io.on('connection', (socket) => {
                 rating: m.vote_average ? Math.round(m.vote_average * 10) / 10 : 0,
                 overview: m.overview || 'No description available.'
             }));
+
+            browseCache.set(cacheKey, { results, ts: Date.now() });
             socket.emit('browse-results', { category, genreId: genreId || '', results });
         } catch (error) {
             console.log('❌ Browse error:', error.message);
@@ -242,7 +269,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 📝 WISHLIST (TMDB movies) ---
+    // --- WISHLIST ---
     socket.on('add-to-wishlist', ({ roomCode, movie }) => {
         if (rooms[roomCode]) {
             const item = {
@@ -263,7 +290,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 🎞️ PLAYLIST (videos with URLs — host-only management) ---
+    // --- PLAYLIST ---
     socket.on('add-to-playlist', ({ roomCode, item }) => {
         if (!rooms[roomCode]) return;
         if (socket.id !== rooms[roomCode].host) {
@@ -292,7 +319,6 @@ io.on('connection', (socket) => {
         io.to(roomCode).emit('playlist-updated', rooms[roomCode].playlist);
     });
 
-    // --- ▶ PLAY A PLAYLIST VIDEO ---
     socket.on('play-from-playlist', ({ roomCode, itemId }) => {
         const room = rooms[roomCode];
         if (!room) return;
@@ -313,9 +339,26 @@ io.on('connection', (socket) => {
         }, 800);
     });
 
-    // --- 🎬 PLAY TRAILER (for any TMDB movie) ---
+    // --- PLAY TRAILER (with cache + pending lock) ---
     socket.on('play-trailer', async ({ roomCode, tmdbId, title }) => {
         if (!rooms[roomCode]) return;
+
+        // Serve from cache immediately
+        const cached = trailerCache.get(tmdbId);
+        if (cached && cached !== 'pending') {
+            rooms[roomCode].trailerState = { isOpen: true, title: cached.title, key: cached.key };
+            io.to(roomCode).emit('show-trailer', { title: cached.title, key: cached.key });
+            return;
+        }
+
+        // Already fetching — ignore duplicate clicks
+        if (cached === 'pending') {
+            console.log('⏳ Trailer already fetching, ignoring duplicate click');
+            return;
+        }
+
+        // Mark as pending
+        trailerCache.set(tmdbId, 'pending');
 
         try {
             const fullUrl = `${TMDB_BASE_URL}/movie/${tmdbId}/videos?api_key=${TMDB_API_KEY}`;
@@ -325,12 +368,15 @@ io.on('connection', (socket) => {
                          || videos.find(v => v.site === 'YouTube');
 
             if (trailer) {
+                trailerCache.set(tmdbId, { title, key: trailer.key });
                 rooms[roomCode].trailerState = { isOpen: true, title, key: trailer.key };
                 io.to(roomCode).emit('show-trailer', { title, key: trailer.key });
             } else {
+                trailerCache.delete(tmdbId);
                 socket.emit('error-message', 'No trailer available for this movie.');
             }
         } catch (error) {
+            trailerCache.delete(tmdbId);
             console.log('❌ Trailer error:', error.message);
             socket.emit('error-message', 'Could not load trailer.');
         }
@@ -354,8 +400,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- 🗳️ GROUP POLLS (votes on WISHLIST) ---
-
+    // --- POLLS ---
     function emitPollUpdate(roomCode) {
         const room = rooms[roomCode];
         if (!room || !room.poll) return;
@@ -365,7 +410,6 @@ io.on('connection', (socket) => {
         poll.options.forEach(opt => opt.votes.forEach(v => voters.add(v)));
         const totalUsers = room.users.length;
 
-        // "All voted" = everyone used both their 2 votes
         const totalVotesCast = poll.options.reduce((sum, opt) => sum + opt.votes.length, 0);
         const maxPossibleVotes = totalUsers * 2;
         const allVoted = totalVotesCast >= maxPossibleVotes;
