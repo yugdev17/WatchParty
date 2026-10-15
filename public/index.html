@@ -8,6 +8,12 @@
 </head>
 <body>
 
+    <!-- ============ RECONNECTION TOAST ============ -->
+    <div id="toast" class="toast hidden">
+        <span class="toast-icon">🔄</span>
+        <span class="toast-text">Reconnecting…</span>
+    </div>
+
     <!-- ============ LOBBY SCREEN ============ -->
     <div id="screen-lobby" class="screen">
         <div class="lobby-card">
@@ -40,9 +46,8 @@
     <!-- ============ ROOM SCREEN ============ -->
     <div id="room-view" class="room-layout hidden">
 
-        <!-- ===== Top Header (2 columns matching body) ===== -->
+        <!-- ===== Top Header ===== -->
         <div class="header-row">
-            <!-- Left column: logo + room + invite -->
             <div class="header-left-col">
                 <img src="Logo.png" alt="WatchParty" class="header-logo">
                 <span class="room-code-label">Room</span>
@@ -52,9 +57,7 @@
                 </button>
             </div>
 
-            <!-- Right column: two rows -->
             <div class="header-right-col">
-                <!-- Row 1: users chip + leave -->
                 <div class="header-right-top">
                     <div class="users-chip" id="users-chip">
                         <span class="users-icon">👥</span>
@@ -67,7 +70,6 @@
                     <button id="leave-btn" class="btn-leave">Leave</button>
                 </div>
 
-                <!-- Row 2: tabs -->
                 <div class="header-right-bottom">
                     <nav class="tab-bar">
                         <button class="panel-tab active" data-tab="chat">💬 Chat</button>
@@ -80,10 +82,8 @@
             </div>
         </div>
 
-        <!-- ===== Body: video + side panel ===== -->
+        <!-- ===== Body ===== -->
         <div class="room-body">
-
-            <!-- Video column -->
             <div class="video-area">
                 <video id="video-player" controls>Your browser does not support HTML5 video.</video>
                 <div class="video-input-row">
@@ -92,14 +92,9 @@
                 </div>
             </div>
 
-            <!-- Side panel -->
             <aside class="side-panel">
-
-                <!-- Chat Tab -->
                 <div class="panel-content active" id="tab-chat">
                     <div class="chat-messages" id="chat-messages"></div>
-
-                    <!-- Emoji bar above input -->
                     <div class="emoji-bar" id="emoji-bar">
                         <button class="emoji-btn" data-emoji="❤️">❤️</button>
                         <button class="emoji-btn" data-emoji="😂">😂</button>
@@ -108,14 +103,12 @@
                         <button class="emoji-btn" data-emoji="👍">👍</button>
                         <button class="emoji-btn" data-emoji="😢">😢</button>
                     </div>
-
                     <div class="chat-input-area">
                         <input type="text" id="chat-input" class="input-field" placeholder="Type a message...">
                         <button id="send-chat-btn" class="btn btn-primary small">➤</button>
                     </div>
                 </div>
 
-                <!-- Movies / Search Tab -->
                 <div class="panel-content" id="tab-search">
                     <div class="search-input-area">
                         <input type="text" id="search-input" class="input-field" placeholder="Search movies...">
@@ -136,7 +129,6 @@
                     </div>
                 </div>
 
-                <!-- Polls Tab (inline) -->
                 <div class="panel-content" id="tab-polls">
                     <div id="poll-voting-view">
                         <div id="poll-empty">
@@ -164,30 +156,24 @@
                     </div>
                 </div>
 
-                <!-- Playlist Tab -->
                 <div class="panel-content" id="tab-playlist">
                     <div class="playlist-items" id="playlist-items">
                         <p class="muted-text">No videos in the playlist yet. Promote from Wishlist or paste a URL.</p>
                     </div>
                 </div>
 
-                <!-- Wish List Tab -->
                 <div class="panel-content" id="tab-wishlist">
                     <div class="wishlist-items" id="wishlist-items">
                         <p class="muted-text">No movies in the wishlist yet. Add from the Movies tab!</p>
                     </div>
                 </div>
-
             </aside>
         </div>
 
-        <!-- Emoji float overlay -->
         <div class="reaction-overlay" id="reaction-overlay"></div>
     </div>
 
     <!-- ============ MODALS ============ -->
-
-    <!-- Promote modal (wishlist → playlist) -->
     <div id="promote-modal" class="modal hidden">
         <div class="modal-content promote-modal-content">
             <div class="modal-header">
@@ -203,7 +189,6 @@
         </div>
     </div>
 
-    <!-- Trailer modal -->
     <div id="trailer-modal" class="modal hidden">
         <div class="modal-content">
             <div class="modal-header">

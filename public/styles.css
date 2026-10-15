@@ -32,6 +32,54 @@ body {
 .hidden { display: none !important; }
 .muted-text { color: var(--text-muted); font-size: 0.85em; text-align: center; padding: 20px 10px; }
 
+/* ============== RECONNECTION TOAST ============== */
+.toast {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 20px;
+    background: var(--bg-panel);
+    border: 1px solid var(--gold);
+    border-radius: 30px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px var(--gold-dim);
+    z-index: 2000;
+    animation: toastSlideIn 0.3s ease-out;
+    pointer-events: none;
+}
+
+.toast.toast-success {
+    border-color: var(--success);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(76, 175, 80, 0.4);
+}
+
+.toast.toast-error {
+    border-color: #f44336;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.6), 0 0 20px rgba(244, 67, 54, 0.4);
+}
+
+.toast-icon { font-size: 16px; }
+
+.toast.toast-spinning .toast-icon {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+@keyframes toastSlideIn {
+    from { opacity: 0; transform: translate(-50%, -20px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* ============== INPUTS ============== */
 .input-field {
     width: 100%;
@@ -171,7 +219,6 @@ body {
     position: relative;
 }
 
-/* Full-height vertical divider between the two header columns */
 .header-row::after {
     content: '';
     position: absolute;
@@ -183,7 +230,6 @@ body {
     pointer-events: none;
 }
 
-/* Left column: logo + room code + invite */
 .header-left-col {
     flex: 1;
     display: flex;
@@ -235,7 +281,6 @@ body {
     border-color: var(--gold);
 }
 
-/* Right column: two rows */
 .header-right-col {
     width: 400px;
     flex-shrink: 0;
@@ -261,7 +306,6 @@ body {
     overflow: hidden;
 }
 
-/* Users chip + dropdown */
 .users-chip {
     position: relative;
     display: flex;
@@ -341,7 +385,6 @@ body {
     vertical-align: middle;
 }
 
-/* Leave button */
 .btn-leave {
     background: rgba(244, 67, 54, 0.15);
     border: 1px solid rgba(244, 67, 54, 0.5);
@@ -362,7 +405,6 @@ body {
     box-shadow: 0 0 16px rgba(244, 67, 54, 0.4);
 }
 
-/* Tab Bar (inside right column row 2) */
 .tab-bar {
     display: flex;
     gap: 5px;
@@ -402,7 +444,6 @@ body {
     box-shadow: 0 0 12px var(--gold-dim);
 }
 
-/* --- Body layout --- */
 .room-body {
     display: flex;
     flex: 1;
@@ -441,7 +482,6 @@ body {
     padding: 10px 14px;
 }
 
-/* --- Side panel --- */
 .side-panel {
     width: 400px;
     flex-shrink: 0;

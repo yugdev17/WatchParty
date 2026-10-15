@@ -38,6 +38,11 @@ const usersChip = document.getElementById('users-chip');
 const usersDropdown = document.getElementById('users-dropdown');
 const usersCount = document.getElementById('users-count');
 
+// Toast
+const toast = document.getElementById('toast');
+const toastIcon = toast.querySelector('.toast-icon');
+const toastText = toast.querySelector('.toast-text');
+
 // Promote modal
 const promoteModal = document.getElementById('promote-modal');
 const promoteCloseBtn = document.getElementById('promote-close-btn');
@@ -72,6 +77,7 @@ const lobbyTitle = document.getElementById('lobby-title');
 
 // --- State ---
 let currentRoomCode = '';
+let currentUsername = '';
 let isHost = false;
 let syncLock = false;
 let isBuffering = false;
@@ -88,6 +94,127 @@ let currentPollResults = null;
 let pollCountdownInterval = null;
 let promotingMovie = null;
 let activeTab = 'chat';
+let hasConnectedOnce = false;
+
+// ============================================
+// SESSION STORAGE (for reconnection)
+// ============================================
+const SESSION_KEY = 'watchparty_session';
+
+function saveSession() {
+    if (!currentRoomCode || !currentUsername) return;
+    try {
+        localStorage.setItem(SESSION_KEY, JSON.stringify({
+            roomCode: currentRoomCode,
+            username: currentUsername,
+            savedAt: Date.now()
+        }));
+    } catch (e) {}
+}
+
+function loadSession() {
+    try {
+        const raw = localStorage.getItem(SESSION_KEY);
+        if (!raw) return null;
+        const data = JSON.parse(raw);
+        // Expire sessions older than 2 hours
+        if (Date.now() - data.savedAt > 2 * 60 * 60 * 1000) {
+            localStorage.removeItem(SESSION_KEY);
+            return null;
+        }
+        return data;
+    } catch (e) {
+        return null;
+    }
+}
+
+function clearSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (e) {}
+}
+
+// ============================================
+// TOAST NOTIFICATIONS
+// ============================================
+let toastTimeout = null;
+
+function showToast(text, type = 'info', duration = 0) {
+    toastText.textContent = text;
+    toast.className = 'toast';
+    if (type === 'success') toast.classList.add('toast-success');
+    if (type === 'error') toast.classList.add('toast-error');
+    if (type === 'info') toast.classList.add('toast-spinning');
+    toast.classList.remove('hidden');
+
+    if (toastTimeout) clearTimeout(toastTimeout);
+    if (duration > 0) {
+        toastTimeout = setTimeout(() => {
+            toast.classList.add('hidden');
+        }, duration);
+    }
+}
+
+function hideToast() {
+    if (toastTimeout) clearTimeout(toastTimeout);
+    toast.classList.add('hidden');
+}
+
+// ============================================
+// SOCKET CONNECTION EVENTS (reconnection)
+// ============================================
+socket.on('connect', () => {
+    if (hasConnectedOnce) {
+        // This is a RE-connection
+        console.log('🔌 Socket reconnected. Attempting to rejoin room…');
+        const session = loadSession();
+        if (session && session.roomCode) {
+            // Silently try to rejoin the room we were in
+            currentRoomCode = session.roomCode;
+            currentUsername = session.username;
+            socket.emit('join-room', {
+                username: session.username,
+                roomCode: session.roomCode
+            });
+        } else {
+            // No session — just hide the toast
+            hideToast();
+        }
+    }
+    hasConnectedOnce = true;
+});
+
+socket.on('disconnect', (reason) => {
+    console.log('🔌 Socket disconnected:', reason);
+    // Only show the toast if we're in a room
+    if (currentRoomCode) {
+        showToast('Reconnecting…', 'info', 0);
+    }
+});
+
+// Handle reconnection success/failure via server responses
+socket.on('room-joined', (roomCode) => {
+    // If we already had this room (a reconnection), show success
+    const wasReconnect = (currentRoomCode === roomCode && roomView && !roomView.classList.contains('hidden'));
+    
+    currentRoomCode = roomCode;
+    currentUsername = usernameInput.value.trim() || currentUsername;
+    showRoomView(roomCode);
+    socket.emit('get-genres');
+    socket.emit('browse-movies', { category: 'trending', genreId: '' });
+    saveSession();
+    
+    if (wasReconnect) {
+        showToast('Reconnected', 'success', 2000);
+    }
+});
+
+socket.on('room-created', (roomCode) => {
+    currentRoomCode = roomCode;
+    currentUsername = usernameInput.value.trim();
+    showRoomView(roomCode);
+    socket.emit('get-genres');
+    socket.emit('browse-movies', { category: 'trending', genreId: '' });
+    saveSession();
+});
 
 // ============================================
 // INVITE LINK DETECTION
@@ -112,11 +239,30 @@ let activeTab = 'chat';
 })();
 
 // ============================================
+// AUTO-RESUME ON PAGE LOAD
+// ============================================
+(function tryAutoResume() {
+    if (invitedRoomCode) return; // invite link takes priority
+    const session = loadSession();
+    if (session && session.roomCode && session.username) {
+        console.log('🔄 Found saved session, auto-rejoining:', session.roomCode);
+        currentRoomCode = session.roomCode;
+        currentUsername = session.username;
+        usernameInput.value = session.username;
+        socket.emit('join-room', {
+            username: session.username,
+            roomCode: session.roomCode
+        });
+    }
+})();
+
+// ============================================
 // LOBBY FLOW
 // ============================================
 createBtn.addEventListener('click', () => {
     const username = usernameInput.value.trim();
     if (!username) return alert('Please enter a name!');
+    currentUsername = username;
     socket.emit('create-room', { username });
 });
 
@@ -141,26 +287,13 @@ joinBtn.addEventListener('click', () => {
     const roomCode = invitedRoomCode || roomCodeInput.value.trim().toUpperCase();
     if (!username) return alert('Please enter a name!');
     if (!roomCode) return alert('Please enter a room code!');
+    currentUsername = username;
     socket.emit('join-room', { username, roomCode });
 });
 
 // ============================================
 // ROOM EVENTS
 // ============================================
-socket.on('room-created', (roomCode) => {
-    currentRoomCode = roomCode;
-    showRoomView(roomCode);
-    socket.emit('get-genres');
-    socket.emit('browse-movies', { category: 'trending', genreId: '' });
-});
-
-socket.on('room-joined', (roomCode) => {
-    currentRoomCode = roomCode;
-    showRoomView(roomCode);
-    socket.emit('get-genres');
-    socket.emit('browse-movies', { category: 'trending', genreId: '' });
-});
-
 socket.on('is-host', (status) => {
     isHost = status;
     if (currentWishlist.length) renderWishlist(currentWishlist);
@@ -179,6 +312,19 @@ socket.on('user-list', (users) => {
 });
 
 socket.on('error-message', (msg) => {
+    // If we were trying to auto-rejoin and the room is gone, clear session and go back to lobby
+    if (msg.includes('Room not found') && currentRoomCode) {
+        clearSession();
+        currentRoomCode = '';
+        currentUsername = '';
+        hideToast();
+        // If room is open, go back to lobby
+        if (roomView && !roomView.classList.contains('hidden')) {
+            showToast('Room no longer exists', 'error', 3000);
+            setTimeout(() => window.location.reload(), 1500);
+            return;
+        }
+    }
     errorMsg.textContent = msg;
     if (msg.toLowerCase().includes('trailer')) alert(msg);
     if (msg.toLowerCase().includes('poll')) alert(msg);
@@ -196,7 +342,6 @@ function showRoomView(roomCode) {
 // ============================================
 if (usersChip) {
     usersChip.addEventListener('click', (e) => {
-        // Ignore clicks on the dropdown itself
         if (e.target.closest('#users-dropdown')) return;
         e.stopPropagation();
         usersDropdown.classList.toggle('hidden');
@@ -231,7 +376,7 @@ copyInviteBtn.addEventListener('click', () => {
 });
 
 // ============================================
-// MOVIE DISCOVERY (Search + Browse)
+// MOVIE DISCOVERY
 // ============================================
 function displayMovies(results) {
     searchResults.innerHTML = '';
@@ -253,11 +398,9 @@ function displayMovies(results) {
 
         div.addEventListener('click', () => {
             socket.emit('add-to-wishlist', { roomCode: currentRoomCode, movie });
-
             const addBtn = div.querySelector('.add-btn');
             addBtn.textContent = '✓ Added';
             addBtn.classList.add('added');
-
             div.style.opacity = '0.6';
             setTimeout(() => { div.style.opacity = '1'; }, 300);
         });
@@ -266,7 +409,6 @@ function displayMovies(results) {
     });
 }
 
-// --- Browse cache ---
 const browseCache = new Map();
 
 function cacheKey(category, genreId) {
@@ -467,7 +609,6 @@ promoteConfirmBtn.addEventListener('click', () => {
 
     promoteModal.classList.add('hidden');
     promotingMovie = null;
-
     switchTab('playlist');
 });
 
@@ -957,8 +1098,9 @@ function renderPollResults(results) {
 }
 
 // ============================================
-// LEAVE ROOM
+// LEAVE ROOM (clears session)
 // ============================================
 document.getElementById('leave-btn').addEventListener('click', () => {
+    clearSession();
     window.location.reload();
 });
