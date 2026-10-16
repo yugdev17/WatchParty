@@ -9,8 +9,9 @@ const server = http.createServer(app);
 const io = new Server(server);
 
 app.use(express.static(path.join(__dirname, 'public')));
-// Health check endpoint (keeps free tier alive)
+// Health check endpoint for uptime monitors
 app.get('/health', (req, res) => res.status(200).send('OK'));
+app.head('/health', (req, res) => res.status(200).end());
 // 🔑 PUT YOUR REAL TMDB API KEY HERE
 const TMDB_API_KEY = 'd411e3bbc2de81f662b87cc90518f87f';
 const TMDB_BASE_URL = 'https://api.themoviedb.org/3';
