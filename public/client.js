@@ -468,7 +468,6 @@ socket.on('room-created', (roomCode) => {
     updatePlayPauseIcon();
     updateVolumeIcon();
 });
-
 socket.on('room-joined', (roomCode) => {
     const wasReconnect = (currentRoomCode === roomCode && !roomView.classList.contains('hidden'));
     currentRoomCode = roomCode;
@@ -480,6 +479,15 @@ socket.on('room-joined', (roomCode) => {
     saveSession();
     updatePlayPauseIcon();
     updateVolumeIcon();
+
+    // If a poll is already active, highlight the tab immediately
+    setTimeout(() => {
+        if (currentPoll && currentPoll.isActive) {
+            const pollTab = document.querySelector('.panel-tab[data-tab="polls"]');
+            if (pollTab) pollTab.classList.add('poll-alert');
+        }
+    }, 500);
+
     if (wasReconnect) {
         showToast('Reconnected', 'success', 2000);
     }
@@ -1078,7 +1086,6 @@ socket.on('sync-time', (hostTime) => {
 
 // ============================================
 // TAB SWITCHING
-// ============================================
 function switchTab(tabName) {
     activeTab = tabName;
     document.querySelectorAll('.panel-tab').forEach(t => t.classList.remove('active'));
@@ -1154,6 +1161,16 @@ socket.on('poll-updated', (poll) => {
     pollResultsView.classList.add('hidden');
     renderActivePoll();
     updatePollEmptyState();
+
+    // Keep the Polls tab glowing for the entire duration of the poll
+    const pollTab = document.querySelector('.panel-tab[data-tab="polls"]');
+    if (pollTab) {
+        if (poll.isActive) {
+            pollTab.classList.add('poll-alert');
+        } else {
+            pollTab.classList.remove('poll-alert');
+        }
+    }
 });
 
 socket.on('poll-results', (results) => {
@@ -1168,6 +1185,10 @@ socket.on('poll-results', (results) => {
 
     renderPollResults(results);
     switchTab('polls');
+
+    // Poll is over — remove the highlight
+    const pollTab = document.querySelector('.panel-tab[data-tab="polls"]');
+    if (pollTab) pollTab.classList.remove('poll-alert');
 });
 
 socket.on('poll-dismissed', () => {
@@ -1177,6 +1198,10 @@ socket.on('poll-dismissed', () => {
     pollVotingView.classList.remove('hidden');
     pollResultsView.classList.add('hidden');
     updatePollEmptyState();
+
+    // Poll dismissed — remove the highlight
+    const pollTab = document.querySelector('.panel-tab[data-tab="polls"]');
+    if (pollTab) pollTab.classList.remove('poll-alert');
 });
 
 function renderActivePoll() {
